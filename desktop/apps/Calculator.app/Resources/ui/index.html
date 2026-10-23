@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><link rel="stylesheet" href="style.css"></head>
+<body>
+<div class="calc" id="calc" tabindex="-1">
+  <div class="top">
+    <div class="segmented" role="group" aria-label="Mode">
+      <button id="m-basic" aria-pressed="true">Basic</button>
+      <button id="m-sci" aria-pressed="false">Scientific</button>
+    </div>
+    <span class="grow"></span>
+    <button id="angle" class="plain sci-only" title="Angle unit" aria-label="Angle unit">Deg</button>
+    <button id="tape" class="plain icon" title="History" aria-label="History" aria-pressed="false">&#9783;</button>
+  </div>
+  <div class="display" role="status" aria-live="polite">
+    <div id="preview" class="preview"></div>
+    <div id="expr" class="expr">0</div>
+  </div>
+  <div id="history" class="history" hidden aria-label="History">
+    <div id="items" class="items"></div>
+    <div class="row"><button id="clearhist">Clear History</button></div>
+  </div>
+  <div id="pad" class="pad"></div>
+</div>
+<script src="main.js"></script>
+</body>
+</html>

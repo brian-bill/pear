@@ -1,0 +1,10 @@
+{
+  "id": "org.tiny.settings",
+  "name": "System Settings",
+  "version": "1.0.0",
+  "kind": "app",
+  "icon": "Resources/icon.svg",
+  "ui": "Resources/ui/index.html",
+  "window": { "width": 760, "height": 520, "minWidth": 600, "minHeight": 400 },
+  "permissions": ["fs.user"]
+}

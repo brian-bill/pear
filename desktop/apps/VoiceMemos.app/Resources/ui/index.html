@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><link rel="stylesheet" href="style.css"></head>
+<body>
+<div class="app">
+  <div class="toolbar">
+    <span class="spacer"></span>
+    <button id="import" class="plain" title="Import audio… (⌘O)">Import audio…</button>
+  </div>
+  <div id="list" class="scroll memos" role="listbox" aria-label="Recordings"></div>
+  <div id="empty" class="empty" hidden>No recordings yet.<span class="dim">Record with ⌘N, or bring one in with Import audio… (⌘O).</span></div>
+  <div id="note" class="note" role="status" hidden></div>
+  <div class="transport">
+    <button id="rec" class="mbtn rec" title="Record (⌘N)" aria-label="Record">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7" fill="currentColor"/></svg>
+    </button>
+    <button id="play" class="mbtn main" title="Play" aria-label="Play" disabled>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg>
+    </button>
+    <span id="cur" class="time">0:00</span>
+  </div>
+</div>
+<script src="main.js"></script>
+</body>
+</html>

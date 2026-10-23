@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><link rel="stylesheet" href="style.css"></head>
+<body>
+<div class="stocks">
+  <div class="toolbar">
+    <button id="add" aria-label="Add symbol to watchlist">＋ Add Symbol</button>
+    <span class="spacer"></span>
+    <button id="reload" class="plain" title="Reload (⌘R)" aria-label="Reload">⟳ Reload</button>
+  </div>
+  <div id="asof" class="asof dim" role="status" aria-live="polite"></div>
+  <div class="scroll main" role="main" aria-label="Watchlist">
+    <table class="list" aria-label="Currencies — one US dollar buys">
+      <thead>
+        <tr><th scope="col">Currencies · 1 USD buys</th><th scope="col"></th><th scope="col" class="num">Rate</th></tr>
+      </thead>
+      <tbody id="fx"></tbody>
+    </table>
+    <table class="list" aria-label="Crypto in US dollars">
+      <thead>
+        <tr><th scope="col">Crypto</th><th scope="col"></th><th scope="col" class="num">USD</th></tr>
+      </thead>
+      <tbody id="coins"></tbody>
+    </table>
+    <div id="error" class="card error" hidden></div>
+    <p class="note dim">Point-in-time quotes — no intraday history is available from these sources, so nothing is charted.</p>
+  </div>
+  <div id="status" class="status dim" role="status"></div>
+</div>
+<script src="main.js"></script>
+</body>
+</html>

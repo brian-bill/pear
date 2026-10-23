@@ -1,0 +1,42 @@
+/* Reminders window. `body` stays transparent: the window itself is the background. */
+.listhead { display: flex; align-items: baseline; gap: 8px; padding: 10px 16px 8px; box-shadow: 0 0.5px 0 var(--separator); background: var(--window-titlebar); flex: none; }
+.listhead h2 { margin: 0; font-size: 20px; font-weight: 700; }
+.listhead #listsub { font-size: 11px; }
+
+.rows { flex: 1; min-height: 0; overflow: auto; padding: 6px 12px 30px; }
+.rows .item { border-radius: 8px; padding: 3px 8px; }
+.rows .item.selected { background: rgba(127, 127, 127, 0.14); }
+.hrow { display: flex; align-items: center; gap: 9px; min-height: 26px; }
+
+/* The completion circle: a filled accent disc with a check when done. */
+.circle { width: 21px; height: 21px; padding: 0; border-radius: 50%; border: 1.6px solid var(--text-dim); background: none; box-shadow: none; flex: none; display: grid; place-items: center; color: transparent; }
+.circle:hover { border-color: var(--accent); }
+.circle.done { background: var(--accent); border-color: var(--accent); color: #fff; }
+.circle svg { width: 12px; height: 12px; }
+
+input.title { flex: 1; min-width: 0; padding: 2px 0; border: 0; background: none; box-shadow: none; color: var(--text); }
+input.title:focus { outline: none; }
+.item.done input.title { text-decoration: line-through; color: var(--text-dim); }
+
+.chip { flex: none; font-size: 11px; color: var(--text-dim); white-space: nowrap; }
+.chip.today { color: var(--accent); }
+.chip.overdue { color: #ff453a; }
+.src { flex: none; font-size: 11px; color: var(--text-dim); white-space: nowrap; padding: 0 6px; border-radius: 4px; background: rgba(127, 127, 127, 0.16); }
+
+/* Details line, shown for the selected row only. */
+.details { display: flex; gap: 8px; padding: 1px 0 5px 2px; min-width: 0; }
+.details input { font-size: 12px; padding: 2px 6px; border-radius: 6px; min-width: 0; }
+.details input[type='datetime-local'] { flex: none; font-family: var(--mono); }
+.details input.notes { flex: 1; }
+
+.addbar { display: flex; align-items: center; gap: 9px; padding: 10px 20px; box-shadow: 0 -0.5px 0 var(--separator); background: var(--window-titlebar); flex: none; }
+.addcircle { width: 21px; height: 21px; border-radius: 50%; border: 1.6px solid var(--text-dim); opacity: 0.65; flex: none; }
+#add { flex: 1; min-width: 0; padding: 2px 0; border: 0; background: none; box-shadow: none; }
+#add:focus { outline: none; }
+
+/* Sidebar */
+.badge { min-width: 16px; text-align: center; font-size: 11px; line-height: 16px; padding: 0 5px; border-radius: 8px; background: rgba(127, 127, 127, 0.32); color: inherit; }
+.sidebar .item.selected .badge { background: rgba(255, 255, 255, 0.4); color: #fff; }
+.sidebar .item .lbl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.rows .empty { margin: 34px 8px; text-align: center; color: var(--text-dim); font-size: 13px; }

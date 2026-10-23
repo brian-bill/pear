@@ -1,0 +1,17 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "pnpm install --frozen-lockfile",
+  "buildCommand": "pnpm --filter @tiny/kernel build && pnpm --filter @tiny/desktop build",
+  "outputDirectory": "desktop/dist",
+  "headers": [
+    {
+      "source": "/os/host.html",
+      "headers": [
+        {
+          "key": "Content-Security-Policy",
+          "value": "sandbox allow-scripts"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><link rel="stylesheet" href="style.css"></head>
+<body>
+<div class="app" id="app">
+  <div class="toolbar" role="toolbar" aria-label="Freeform toolbar">
+    <div class="segmented" id="tools" role="group" aria-label="Tools"></div>
+    <div class="palette" id="colors" role="group" aria-label="Stroke colour"></div>
+    <div class="palette" id="widths" role="group" aria-label="Stroke width"></div>
+    <span class="spacer"></span>
+    <button id="zoom-out" class="plain icon" title="Zoom out" aria-label="Zoom out">&minus;</button>
+    <button id="zoom-fit" title="Zoom to fit">100%</button>
+    <button id="zoom-in" class="plain icon" title="Zoom in" aria-label="Zoom in">+</button>
+  </div>
+  <div id="board" tabindex="0" role="application" aria-label="Board">
+    <svg xmlns="http://www.w3.org/2000/svg">
+      <g id="world">
+        <g id="items"></g>
+        <g id="draft"></g>
+        <g id="overlay"><rect id="outline" fill="none" stroke="var(--accent)" stroke-dasharray="6 3" stroke-width="1.5"></rect></g>
+      </g>
+    </svg>
+  </div>
+</div>
+<script src="main.js"></script>
+</body>
+</html>

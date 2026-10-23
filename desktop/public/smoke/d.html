@@ -1,0 +1,26 @@
+<!doctype html>
+<html>
+<head><title>Smoke D</title></head>
+<body>
+  <h1 id="page-d">Delta page</h1>
+  <p id="fetch-out">fetch did not run</p>
+  <p id="json-out">json did not run</p>
+  <p id="xhr-out">xhr did not run</p>
+  <p id="form-post-out">post did not run</p>
+  <script>
+    fetch('/smoke/a.html')
+      .then((r) => r.text())
+      .then((t) => { document.getElementById('fetch-out').textContent = t.indexOf('Alpha page') >= 0 ? 'fetch read alpha' : 'fetch read other' })
+      .catch(() => { document.getElementById('fetch-out').textContent = 'fetch failed' })
+    fetch('/smoke/data.json')
+      .then((r) => r.json())
+      .then((j) => { document.getElementById('json-out').textContent = 'json ' + j.name })
+      .catch(() => { document.getElementById('json-out').textContent = 'json failed' })
+    const xhr = new XMLHttpRequest()
+    xhr.open('GET', '/smoke/b.html')
+    xhr.onload = () => { document.getElementById('xhr-out').textContent = xhr.responseText.indexOf('Beta page') >= 0 ? 'xhr read beta' : 'xhr read other' }
+    xhr.onerror = () => { document.getElementById('xhr-out').textContent = 'xhr failed' }
+    xhr.send()
+  </script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+{
+  "id": "org.tiny.clock",
+  "name": "Clock",
+  "version": "1.0.0",
+  "kind": "app",
+  "icon": "Resources/icon.svg",
+  "ui": "Resources/ui/index.html",
+  "window": { "width": 520, "height": 480, "minWidth": 380, "minHeight": 340 },
+  "permissions": ["notifications"]
+}

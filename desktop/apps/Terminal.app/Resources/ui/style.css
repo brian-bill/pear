@@ -1,0 +1,4 @@
+html, body { background: var(--terminal-bg); }
+.terminal { height: 100%; margin: 0; padding: 6px 8px; background: var(--terminal-bg); color: var(--terminal-fg); font: 12px/1.35 var(--mono); overflow: auto; white-space: pre-wrap; word-break: break-all; outline: 0; cursor: text; user-select: text; }
+.terminal .cursor { background: var(--terminal-fg); color: var(--terminal-bg); }
+.terminal:not(:focus) .cursor { background: none; outline: 1px solid var(--terminal-fg); outline-offset: -1px; color: inherit; }

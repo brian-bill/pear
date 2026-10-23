@@ -1,0 +1,11 @@
+{
+  "id": "org.tiny.browser",
+  "name": "Safari",
+  "version": "1.0.0",
+  "kind": "app",
+  "icon": "Resources/icon.svg",
+  "ui": "Resources/ui/index.html",
+  "window": { "width": 900, "height": 620, "minWidth": 480, "minHeight": 340 },
+  "permissions": ["network", "fs.user"],
+  "urlSchemes": ["http", "https"]
+}

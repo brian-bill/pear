@@ -1,0 +1,26 @@
+{
+  "id": "org.tiny.quicktime",
+  "name": "QuickTime Player",
+  "version": "1.0.0",
+  "kind": "app",
+  "icon": "Resources/icon.svg",
+  "ui": "Resources/ui/index.html",
+  "window": { "width": 800, "height": 560, "minWidth": 460, "minHeight": 340 },
+  "permissions": ["fs.user"],
+  "documentTypes": [
+    { "ext": ["mp4", "m4v"], "role": "viewer", "uti": "public.mpeg-4" },
+    { "ext": ["mov", "qt"], "role": "viewer", "uti": "com.apple.quicktime-movie" },
+    { "ext": ["webm"], "role": "viewer", "uti": "org.webmproject.webm" },
+    { "ext": ["mkv"], "role": "viewer", "uti": "org.matroska.mkv" },
+    { "ext": ["avi"], "role": "viewer", "uti": "com.microsoft.avi" },
+    { "ext": ["wmv", "asf"], "role": "viewer", "uti": "com.microsoft.wmv" },
+    { "ext": ["mpg", "mpeg", "m1v"], "role": "viewer", "uti": "public.mpeg" },
+    { "ext": ["m2v", "vob"], "role": "viewer", "uti": "public.mpeg-2-video" },
+    { "ext": ["ts", "m2ts", "mts"], "role": "viewer", "uti": "public.mpeg-2-transport-stream" },
+    { "ext": ["ogv"], "role": "viewer", "uti": "org.xiph.ogv" },
+    { "ext": ["3gp"], "role": "viewer", "uti": "org.3gpp" },
+    { "ext": ["3g2"], "role": "viewer", "uti": "org.3gpp2" },
+    { "ext": ["flv", "f4v"], "role": "viewer", "uti": "com.adobe.flash-video" },
+    { "ext": ["dv"], "role": "viewer", "uti": "public.dv-movie" }
+  ]
+}

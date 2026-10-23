@@ -1,0 +1,10 @@
+{
+  "id": "org.tiny.terminal",
+  "name": "Terminal",
+  "version": "1.0.0",
+  "kind": "app",
+  "icon": "Resources/icon.svg",
+  "ui": "Resources/ui/index.html",
+  "window": { "width": 660, "height": 420, "minWidth": 300, "minHeight": 160 },
+  "permissions": ["process.spawn", "fs.user"]
+}

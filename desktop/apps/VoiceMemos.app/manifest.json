@@ -1,0 +1,10 @@
+{
+  "id": "org.tiny.voicememos",
+  "name": "Voice Memos",
+  "version": "1.0.0",
+  "kind": "app",
+  "icon": "Resources/icon.svg",
+  "ui": "Resources/ui/index.html",
+  "window": { "width": 480, "height": 540, "minWidth": 360, "minHeight": 400 },
+  "permissions": ["audio.input", "fs.user"]
+}

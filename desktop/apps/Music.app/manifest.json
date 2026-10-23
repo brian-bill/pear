@@ -1,0 +1,27 @@
+{
+  "id": "org.tiny.music",
+  "name": "Music",
+  "version": "1.0.0",
+  "kind": "app",
+  "icon": "Resources/icon.svg",
+  "ui": "Resources/ui/index.html",
+  "window": { "width": 640, "height": 430, "minWidth": 480, "minHeight": 300 },
+  "permissions": ["fs.user"],
+  "documentTypes": [
+    { "ext": ["mp3"], "role": "viewer", "uti": "public.mp3" },
+    { "ext": ["wav"], "role": "viewer", "uti": "com.microsoft.waveform-audio" },
+    { "ext": ["aif", "aiff", "aifc"], "role": "viewer", "uti": "public.aiff-audio" },
+    { "ext": ["m4a", "m4b", "m4r"], "role": "viewer", "uti": "com.apple.m4a-audio" },
+    { "ext": ["aac", "adts"], "role": "viewer", "uti": "public.aac-audio" },
+    { "ext": ["ogg", "oga"], "role": "viewer", "uti": "org.xiph.ogg-audio" },
+    { "ext": ["opus"], "role": "viewer", "uti": "org.xiph.opus" },
+    { "ext": ["flac"], "role": "viewer", "uti": "org.xiph.flac" },
+    { "ext": ["weba"], "role": "viewer", "uti": "org.webmproject.weba" },
+    { "ext": ["wma"], "role": "viewer", "uti": "com.microsoft.wma" },
+    { "ext": ["mid", "midi"], "role": "viewer", "uti": "public.midi-audio" },
+    { "ext": ["caf"], "role": "viewer", "uti": "com.apple.coreaudio-format" },
+    { "ext": ["au"], "role": "viewer", "uti": "com.sun.au-audio" },
+    { "ext": ["amr"], "role": "viewer", "uti": "org.3gpp.amr" },
+    { "ext": ["mka"], "role": "viewer", "uti": "org.matroska.mka" }
+  ]
+}

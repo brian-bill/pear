@@ -1,0 +1,14 @@
+.app { display: flex; flex-direction: column; height: 100%; }
+.toolbar .spacer { flex: 1; }
+.stage { position: relative; flex: 1; min-height: 0; overflow: hidden; background: repeating-conic-gradient(rgba(127,127,127,0.14) 0% 25%, transparent 0% 50%) 0 0 / 16px 16px; outline: 0; cursor: grab; touch-action: none; }
+.stage.panning { cursor: grabbing; }
+.stage img { position: absolute; left: 50%; top: 50%; transform-origin: 0 0; max-width: none; image-rendering: auto; user-select: none; }
+.stage img.pixel { image-rendering: pixelated; }
+.empty { position: absolute; inset: 0; display: grid; place-content: center; }
+.info { position: absolute; right: 10px; top: 10px; margin: 0; padding: 10px 14px; display: grid; grid-template-columns: auto auto; gap: 3px 12px; border-radius: 10px; background: var(--window-titlebar); box-shadow: 0 2px 12px rgba(0,0,0,0.3), 0 0 0 0.5px var(--separator); max-width: 70%; cursor: default; user-select: text; }
+.info[hidden] { display: none; }
+.info dt { color: var(--text-dim); text-align: right; }
+.info dd { margin: 0; word-break: break-all; }
+.status { display: flex; gap: 14px; padding: 3px 10px; font-size: 11px; color: var(--text-dim); background: var(--window-titlebar); box-shadow: 0 -0.5px 0 var(--separator); flex: none; white-space: nowrap; }
+.status .spacer { flex: 1; }
+.status #name { overflow: hidden; text-overflow: ellipsis; }

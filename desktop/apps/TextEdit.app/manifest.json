@@ -1,0 +1,23 @@
+{
+  "id": "org.tiny.textedit",
+  "name": "TextEdit",
+  "version": "1.0.0",
+  "kind": "app",
+  "icon": "Resources/icon.svg",
+  "ui": "Resources/ui/index.html",
+  "window": { "width": 640, "height": 480, "minWidth": 320, "minHeight": 200 },
+  "permissions": ["fs.user", "clipboard"],
+  "documentTypes": [
+    { "ext": ["txt", "text", "log"], "role": "editor", "uti": "public.plain-text" },
+    { "ext": ["md", "markdown"], "role": "editor", "uti": "net.daringfireball.markdown" },
+    { "ext": ["json"], "role": "editor", "uti": "public.json" },
+    { "ext": ["xml"], "role": "editor", "uti": "public.xml" },
+    { "ext": ["html", "htm"], "role": "editor", "uti": "public.html" },
+    { "ext": ["css"], "role": "editor", "uti": "public.css" },
+    { "ext": ["js", "mjs"], "role": "editor", "uti": "com.netscape.javascript-source" },
+    { "ext": ["ts"], "role": "editor", "uti": "public.source-code" },
+    { "ext": ["sh"], "role": "editor", "uti": "public.shell-script" },
+    { "ext": ["csv"], "role": "editor", "uti": "public.csv" },
+    { "ext": ["yml", "yaml", "toml", "ini", "conf"], "role": "editor", "uti": "public.plain-text" }
+  ]
+}

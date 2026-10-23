@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><link rel="stylesheet" href="style.css"></head>
+<body>
+<div class="app">
+  <div class="toolbar">
+    <button id="prev" class="icon" title="Previous image (Left)" aria-label="Previous image">&#8249;</button>
+    <button id="next" class="icon" title="Next image (Right)" aria-label="Next image">&#8250;</button>
+    <span class="spacer"></span>
+    <button id="out" class="icon" title="Zoom out (Cmd+-)" aria-label="Zoom out">&#8722;</button>
+    <button id="fit" title="Zoom to fit (Cmd+9)" aria-label="Zoom to fit">Fit</button>
+    <button id="actual" title="Actual size (Cmd+0)" aria-label="Actual size">1:1</button>
+    <button id="in" class="icon" title="Zoom in (Cmd+=)" aria-label="Zoom in">+</button>
+    <span class="spacer"></span>
+    <button id="rotl" class="icon" title="Rotate left (Cmd+L)" aria-label="Rotate left">&#8634;</button>
+    <button id="rotr" class="icon" title="Rotate right (Cmd+R)" aria-label="Rotate right">&#8635;</button>
+    <button id="infobtn" class="icon" title="Info (Cmd+I)" aria-label="Info" aria-pressed="false">i</button>
+  </div>
+  <div id="stage" class="stage" tabindex="0" aria-label="Image">
+    <img id="img" alt="" draggable="false" hidden>
+    <div id="empty" class="empty dim">Open an image with File &gt; Open (Cmd+O)</div>
+    <dl id="info" class="info" hidden></dl>
+  </div>
+  <div class="status"><span id="name"></span><span class="spacer"></span><span id="dims"></span><span id="zoom"></span><span id="index"></span></div>
+</div>
+<script src="main.js"></script>
+</body>
+</html>

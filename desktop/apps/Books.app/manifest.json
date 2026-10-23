@@ -1,0 +1,10 @@
+{
+  "id": "org.tiny.books",
+  "name": "Books",
+  "version": "1.0.0",
+  "kind": "app",
+  "icon": "Resources/icon.svg",
+  "ui": "Resources/ui/index.html",
+  "window": { "width": 760, "height": 560, "minWidth": 500, "minHeight": 380 },
+  "permissions": ["fs.user"]
+}

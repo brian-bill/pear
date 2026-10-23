@@ -1,0 +1,17 @@
+{
+  "name": "@tiny/kernel",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:wasm": "cd .. && wasm-pack build wasm --target web --release --out-dir ../kernel/pkg --out-name tiny_vanilla",
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.50.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.7.0"
+  }
+}

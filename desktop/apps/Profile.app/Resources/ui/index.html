@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <div class="profile">
+    <aside class="rail">
+      <div class="identity">
+        <img class="pear" src="icon.svg" alt="">
+        <div class="identity-text">
+          <p class="identity-kicker">Pear</p>
+          <h1>Brian Omondi</h1>
+          <p class="identity-role">Software Engineer</p>
+        </div>
+      </div>
+
+      <nav class="nav" aria-label="Profile sections">
+        <button class="nav-item" data-page="project" aria-current="page">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"
+            stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="14" rx="2" />
+            <path d="M8 21h8M12 18v3" />
+            <path d="M7 9h6M7 13h9" />
+          </svg>
+          <span>The Project</span><span class="nav-key">1</span>
+        </button>
+        <button class="nav-item" data-page="resume">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"
+            stroke-linejoin="round" aria-hidden="true">
+            <path d="M7 3h7l5 5v13H7z" />
+            <path d="M14 3v5h5M10 12h6M10 16h6" />
+          </svg>
+          <span>Résumé</span><span class="nav-key">2</span>
+        </button>
+        <button class="nav-item" data-page="contact">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"
+            stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="5" width="18" height="14" rx="2" />
+            <path d="m3 7 9 6 9-6" />
+          </svg>
+          <span>Contact</span><span class="nav-key">3</span>
+        </button>
+      </nav>
+
+      <div class="rail-foot">
+        <div class="live-line"><span class="pulse" aria-hidden="true"></span><span id="rail-system">Pear is
+            running</span></div>
+        <p id="rail-detail">Vanilla · in your browser</p>
+      </div>
+    </aside>
+
+    <main class="main" id="main" tabindex="-1">
+      <section class="page is-active" data-page="project" aria-labelledby="project-title">
+        <header class="hero">
+          <div class="hero-copy">
+            <p class="eyebrow"><span class="pulse" aria-hidden="true"></span>The project</p>
+            <h2 id="project-title">A desktop that lives<br>in a browser tab.</h2>
+            <p class="lede">Pear is a macOS-inspired operating system built for the web. Beneath the windows, menu bar
+              and dock is <strong>Vanilla</strong>: a small kernel, a Unix-style file system and a process model that
+              turn the browser into a real machine.</p>
+            <p class="lede quiet">No install. No backend. No account. Everything you see is running locally in this tab.
+            </p>
+            <div class="chips" aria-label="Technologies">
+              <span class="chip">Rust + WebAssembly</span>
+              <span class="chip">TypeScript</span>
+              <span class="chip">OPFS</span>
+              <span class="chip">Zero servers</span>
+            </div>
+            <div class="actions">
+              <button class="btn primary" data-goto="resume">Read the résumé
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"
+                  stroke-linejoin="round" aria-hidden="true">
+                  <path d="M5 12h14M13 6l6 6-6 6" />
+                </svg>
+              </button>
+              <button class="btn ghost" data-scroll="vanilla">Meet Vanilla</button>
+            </div>
+          </div>
+
+          <aside class="live-card" aria-label="Live system information">
+            <div class="live-card-head"><span class="pulse" aria-hidden="true"></span>Running right now</div>
+            <dl>
+              <div>
+                <dt>System</dt>
+                <dd id="live-version">Pear</dd>
+              </div>
+              <div>
+                <dt>Kernel</dt>
+                <dd id="live-kernel">Vanilla 1.0</dd>
+              </div>
+              <div>
+                <dt>Processor</dt>
+                <dd id="live-cores">—</dd>
+              </div>
+              <div>
+                <dt>Storage</dt>
+                <dd id="live-storage">—</dd>
+              </div>
+              <div>
+                <dt>Uptime</dt>
+                <dd id="live-uptime">—</dd>
+              </div>
+            </dl>
+          </aside>
+        </header>
+
+        <section class="section" id="vanilla">
+          <div class="section-head">
+            <p class="eyebrow">The core OS</p>
+            <h3>Vanilla is the layer below the desktop.</h3>
+          </div>
+          <div class="prose">
+            <p>Vanilla provides everything under the interface: a kernel with a process model and Mach-inspired message
+              passing, a Unix-style virtual file system persisted in the browser’s Origin Private File System, drivers
+              that adapt browser APIs, system services and a POSIX-flavoured shell.</p>
+            <p>The file system engine is written in <strong>Rust</strong> and compiled to <strong>WebAssembly</strong>.
+              Metadata lives in an index with a write-ahead journal, while file contents live in separate blobs.
+              Mounting replays the journal, drops torn records and cleans up orphaned data — so a crash does not take
+              the disk with it.</p>
+            <p>Processes are isolated by construction. Each one runs in a sandboxed iframe with an opaque origin, no
+              storage, no network and no DOM; its only channel out is a <code>MessagePort</code> to the kernel. Apps are
+              bundles with manifests, icons, permissions and launch services. The same rules apply to this Profile app
+              as to anything else.</p>
+          </div>
+
+          <div class="feature-grid">
+            <article class="feature">
+              <span class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="6" cy="6" r="2.4" />
+                  <circle cx="18" cy="6" r="2.4" />
+                  <circle cx="12" cy="18" r="2.4" />
+                  <path d="M8 7.2 10.8 16M16 7.2 13.2 16M8.4 6h7.2" />
+                </svg></span>
+              <h4>A real process model</h4>
+              <p>spawn, signals, wait, pipes, PTYs and job control. Processes get a pid, a cwd, an environment and file
+                descriptors.</p>
+            </article>
+            <article class="feature">
+              <span class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M12 3 5 6v5c0 4.4 3 8.2 7 9.5 4-1.3 7-5.1 7-9.5V6z" />
+                  <path d="m9 12 2 2 4-4" />
+                </svg></span>
+              <h4>Sandboxed by default</h4>
+              <p>Opaque-origin iframes, a strict Content-Security-Policy and one narrow channel to the kernel. No
+                ambient storage or network.</p>
+            </article>
+            <article class="feature">
+              <span class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M3 7a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                  <path d="M8 14h8" />
+                </svg></span>
+              <h4>A Unix file system</h4>
+              <p>files, directories, symlinks, extended attributes, trash, atomic writes and write-ahead crash recovery
+                on OPFS.</p>
+            </article>
+            <article class="feature">
+              <span class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="5" cy="12" r="2.2" />
+                  <circle cx="19" cy="6" r="2.2" />
+                  <circle cx="19" cy="18" r="2.2" />
+                  <path d="M7.2 11.2 16.8 6.8M7.2 12.8l9.6 4.4" />
+                </svg></span>
+              <h4>Message-passing IPC</h4>
+              <p>Mach-inspired ports with send rights, named services, requests, dead-name notifications and payload
+                transfer.</p>
+            </article>
+            <article class="feature">
+              <span class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="3" y="4" width="18" height="16" rx="2" />
+                  <path d="m7 9 3 3-3 3M13 15h4" />
+                </svg></span>
+              <h4>A working userland</h4>
+              <p>a shell with control flow, functions, here-documents and job control, plus 20 core programs in
+                <code>/bin</code>.
+              </p>
+            </article>
+            <article class="feature">
+              <span class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="3" y="3" width="7" height="7" rx="1.6" />
+                  <rect x="14" y="3" width="7" height="7" rx="1.6" />
+                  <rect x="3" y="14" width="7" height="7" rx="1.6" />
+                  <rect x="14" y="14" width="7" height="7" rx="1.6" />
+                </svg></span>
+              <h4>Apps as bundles</h4>
+              <p>install, update, verify and launch by file type or URL, with per-app permissions and single-instance
+                behaviour.</p>
+            </article>
+            <article class="feature">
+              <span class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1" />
+                </svg></span>
+              <h4>Drivers as services</h4>
+              <p>display, input, audio, clipboard and timers — browser capabilities behind the same IPC boundary as
+                everything else.</p>
+            </article>
+            <article class="feature">
+              <span class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M4 18V9M10 18V5M16 18v-7M22 18V3" />
+                  <path d="M2 18h20" />
+                </svg></span>
+              <h4>Observability built in</h4>
+              <p>a rotating system log, console bridge, crash reports, diagnostics and traces — the tools an OS needs to
+                explain itself.</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-head">
+            <p class="eyebrow">Architecture</p>
+            <h3>How the pieces fit.</h3>
+          </div>
+          <div class="arch" role="img"
+            aria-label="Desktop and apps sit above the syscall interface. Below it are the kernel, virtual file system and system services, then drivers, then the browser with WebAssembly, WebGL, OPFS, LocalStorage and Web Workers.">
+            <div class="arch-row"><span class="arch-box top">Desktop + Apps</span></div>
+            <span class="arch-arrow" aria-hidden="true">↓</span>
+            <div class="arch-row"><span class="arch-box">Syscall interface</span></div>
+            <span class="arch-arrow" aria-hidden="true">↓</span>
+            <div class="arch-row three">
+              <span class="arch-box"><b>Kernel</b><small>processes, ports, signals</small></span>
+              <span class="arch-box"><b>VFS</b><small>files, metadata, permissions</small></span>
+              <span class="arch-box"><b>Services</b><small>launch, settings, search</small></span>
+            </div>
+            <span class="arch-arrow" aria-hidden="true">↓</span>
+            <div class="arch-row"><span class="arch-box">Drivers<small>display · input · audio · clipboard ·
+                  timers</small></span></div>
+            <span class="arch-arrow" aria-hidden="true">↓</span>
+            <div class="arch-row"><span class="arch-box browser">Browser<small>WebAssembly · WebGL · OPFS · LocalStorage
+                  · Web Workers</small></span></div>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="stats">
+            <div><strong>89</strong><span>Rust engine tests</span></div>
+            <div><strong>240</strong><span>browser tests</span></div>
+            <div><strong>20</strong><span>shell programs</span></div>
+            <div><strong>5</strong><span>system drivers</span></div>
+          </div>
+          <p class="fine">From the current Vanilla build. Search, networking, disk images, session restore, permissions
+            and the app registry are all running here too.</p>
+        </section>
+
+        <section class="section">
+          <div class="section-head">
+            <p class="eyebrow">Design principles</p>
+            <h3>Small. Fast. Isolated. Readable. Browser-native.</h3>
+          </div>
+          <div class="principles">
+            <div><b>Small</b><span>Fewer, well-defined primitives over feature breadth.</span></div>
+            <div><b>Fast</b><span>Lazy-load everything non-essential; keep the boot path short.</span></div>
+            <div><b>Isolated</b><span>No shared mutable state between processes.</span></div>
+            <div><b>Readable</b><span>A codebase that is a good place to learn how an OS works.</span></div>
+            <div><b>Native</b><span>Use the browser’s platform APIs directly. Avoid heavy frameworks.</span></div>
+          </div>
+        </section>
+
+        <section class="section cta">
+          <div>
+            <p class="eyebrow">The interface</p>
+            <h3>The desktop is a client, not a privileged layer.</h3>
+            <p>Every window, menu, dock icon and app talks to Vanilla through the same syscall interface. The window
+              manager, launcher, Finder and this Profile app are all ordinary clients of the OS.</p>
+          </div>
+          <button class="btn primary" data-goto="resume">See the résumé
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"
+              stroke-linejoin="round" aria-hidden="true">
+              <path d="M5 12h14M13 6l6 6-6 6" />
+            </svg>
+          </button>
+        </section>
+      </section>
+
+      <section class="page" data-page="resume" aria-labelledby="resume-title" hidden>
+        <header class="page-head">
+          <div>
+            <p class="eyebrow">Résumé</p>
+            <h2 id="resume-title">Brian Omondi</h2>
+            <p class="role">Software Engineer · Distributed systems &amp; data infrastructure</p>
+          </div>
+          <button class="btn ghost email-btn" data-copy="brian@omondi.dev" data-label="Email">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+              stroke-linejoin="round" aria-hidden="true">
+              <rect x="3" y="5" width="18" height="14" rx="2" />
+              <path d="m3 7 9 6 9-6" />
+            </svg>
+            brian@omondi.dev
+          </button>
+        </header>
+
+        <div class="summary card">
+          <p>Software engineer with extensive experience building distributed systems and data infrastructure at scale.
+            I help engineering teams ship faster by architecting payment platforms, real-time data pipelines and
+            cloud-native solutions on AWS, with full-stack depth and proven impact in backend and cloud infrastructure.
+          </p>
+        </div>
+
+        <div class="highlight-row" aria-label="Areas of focus">
+          <span>Payments</span><span>Data pipelines</span><span>Cloud infrastructure</span><span>Geospatial</span>
+        </div>
+
+        <div class="resume-grid">
+          <div class="resume-main">
+            <section class="block">
+              <div class="block-head">
+                <h3>Experience</h3><span>4 roles</span>
+              </div>
+
+              <article class="job">
+                <header>
+                  <div class="job-title">
+                    <h4>Everywhere, LLC</h4>
+                    <p>Farmer</p>
+                  </div>
+                  <div class="job-meta"><span>Circa 2024</span><span>Worldwide</span></div>
+                </header>
+                <ul class="bullets">
+                  <li>
+                    Trying to grow a few things in the backyard, but the soil is rocky and the weeds are winning.
+                  </li>
+                  <li>Learning to be patient, and to appreciate the small victories.</li>
+                  <li>Experimenting with different planting techniques and crop rotations.</li>
+                  <li>Documenting the growth process and making adjustments as needed.</li>
+                </ul>
+              </article>
+
+              <article class="job">
+                <header>
+                  <div class="job-title">
+                    <h4>Jumba Technologies</h4>
+                    <p>Software Engineer</p>
+                  </div>
+                  <div class="job-meta"><span>Feb 2024 — Mar 2025</span><span>Nairobi, Kenya</span></div>
+                </header>
+                <ul class="bullets">
+                  <li>Engineered a data lakehouse architecture that ingests, cleans and reconciles fragmented
+                    multi-source event streams and raw financial data into an immutable single source of truth for
+                    billing ledgers and revenue forecasting.</li>
+                  <li>Developed a backup and replica strategy for core services, improving fault tolerance and
+                    availability.</li>
+                  <li>Built a logistics application connecting third-party drivers with an integrated marketplace for
+                    construction materials.</li>
+                  <li>Built the Jumba Customer application, connecting clients with hardware supply sources.</li>
+                  <li>Architected scalable AWS infrastructure for real-time logistics with high availability, secure
+                    data handling and optimised performance.</li>
+                </ul>
+              </article>
+
+              <article class="job">
+                <header>
+                  <div class="job-title">
+                    <h4>Ramani GeoSystems</h4>
+                    <p>Software Engineer</p>
+                  </div>
+                  <div class="job-meta"><span>Jan 2022 — Feb 2024</span><span>Nairobi, Kenya</span></div>
+                </header>
+                <ul class="bullets">
+                  <li>Developed the backend infrastructure of a Geospatial Information System.</li>
+                  <li>Designed a scalable migration and data recovery strategy from on-premises infrastructure to AWS,
+                    significantly reducing infrastructure management costs.</li>
+                  <li>Built geospatial analytical tools integrating AI and the Segment Anything Model (SAM) to predict
+                    the extent of natural events such as flooding, earthquakes and volcanic activity.</li>
+                </ul>
+              </article>
+
+              <article class="job">
+                <header>
+                  <div class="job-title">
+                    <h4>Talkcoms Limited</h4>
+                    <p>Junior Software Engineer</p>
+                  </div>
+                  <div class="job-meta"><span>Nov 2019 — Jan 2022</span><span>Nairobi, Kenya</span></div>
+                </header>
+                <ul class="bullets">
+                  <li>Developed backend infrastructure for geospatial information systems.</li>
+                  <li>Helped design and execute the migration of on-premises workloads to AWS, reducing infrastructure
+                    cost and operational overhead.</li>
+                </ul>
+              </article>
+            </section>
+
+            <section class="block">
+              <div class="block-head">
+                <h3>Education</h3>
+              </div>
+              <div class="education">
+                <article>
+                  <div>
+                    <h4>Moringa School</h4>
+                    <p>Full-stack Software Development</p>
+                  </div>
+                  <span>Jan 2022 — Aug 2022</span>
+                </article>
+                <article>
+                  <div>
+                    <h4>Multimedia University of Kenya</h4>
+                    <p>BSc. Computer Science and Applied Physics</p>
+                  </div>
+                  <span>Sep 2018 — Oct 2022</span>
+                </article>
+              </div>
+            </section>
+          </div>
+
+          <aside class="resume-side">
+            <section class="block">
+              <div class="block-head">
+                <h3>Skills</h3>
+              </div>
+              <div class="skill-groups">
+                <div class="skill-group">
+                  <h4>Languages</h4>
+                  <div class="tags">
+                  <span>Rust</span><span>TypeScript</span><span>JavaScript</span><span>C#</span><span>Python</span><span>SQL</span><span>Go</span>
+                  </div>
+                </div>
+                <div class="skill-group">
+                  <h4>Frameworks &amp; libraries</h4>
+                  <div class="tags">
+                    <span>Node.js</span><span>.NET</span><span>Next.js</span><span>NestJS</span><span>React</span><span>React
+                      Native</span><span>Angular</span>
+                  </div>
+                </div>
+                <div class="skill-group">
+                  <h4>Cloud &amp; DevOps</h4>
+                  <div class="tags"><span>AWS</span><span>Google
+                      Cloud</span><span>Vercel</span><span>Databricks</span><span>Docker</span><span>Terraform</span><span>GitHub
+                      Actions</span><span>Jenkins</span></div>
+                </div>
+                <div class="skill-group">
+                  <h4>Databases</h4>
+                  <div class="tags"><span>PostgreSQL</span><span>MySQL</span><span>Redis /
+                      Valkey</span><span>ClickHouse</span></div>
+                </div>
+                <div class="skill-group">
+                  <h4>Version control</h4>
+                  <div class="tags"><span>Git</span><span>GitHub</span><span>GitLab</span><span>Bitbucket</span></div>
+                </div>
+              </div>
+            </section>
+
+            <section class="block contact-mini">
+              <div class="block-head">
+                <h3>Contact</h3>
+              </div>
+              <button class="contact-line" data-copy="brian@omondi.dev" data-label="Email">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                  stroke-linejoin="round" aria-hidden="true">
+                  <rect x="3" y="5" width="18" height="14" rx="2" />
+                  <path d="m3 7 9 6 9-6" />
+                </svg>
+                <span>brian@omondi.dev</span>
+              </button>
+              <button class="contact-line" data-url="https://github.com/brian-bill">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                  stroke-linejoin="round" aria-hidden="true">
+                  <path
+                    d="M9 19c-4 1.2-4-2-5.5-2.6M15 21v-3.4a3 3 0 0 0-.8-2.3c2.7-.3 5.5-1.3 5.5-6a4.7 4.7 0 0 0-1.3-3.2 4.4 4.4 0 0 0-.1-3.2s-1-.3-3.3 1.3a11.6 11.6 0 0 0-6 0C6.7 2.6 5.7 2.9 5.7 2.9a4.4 4.4 0 0 0-.1 3.2A4.7 4.7 0 0 0 4.3 9.3c0 4.7 2.8 5.7 5.5 6a3 3 0 0 0-.8 2.3V21" />
+                </svg>
+                <span>github.com/brian-bill</span>
+              </button>
+              <button class="contact-line" data-url="https://www.linkedin.com/in/brian-omondi-dev">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                  stroke-linejoin="round" aria-hidden="true">
+                  <path d="M6.5 9V19M6.5 5.5v.1M11 19v-6a3 3 0 0 1 6 0v6" />
+                  <path d="M11 9v10" />
+                </svg>
+                <span>linkedin.com/in/brian-omondi-dev</span>
+              </button>
+              <p class="location">Atlanta, Georgia · Nairobi, Kenya</p>
+            </section>
+          </aside>
+        </div>
+      </section>
+
+      <section class="page" data-page="contact" aria-labelledby="contact-title" hidden>
+        <div class="contact-hero">
+          <p class="eyebrow">Contact</p>
+          <h2 id="contact-title">Let’s build something<br>that holds up.</h2>
+          <p class="lede">Distributed systems, data infrastructure and tools that make engineering teams faster. The
+            fastest way to reach me is email.</p>
+          <div class="contact-grid">
+            <button class="contact-card accent" data-copy="brian@omondi.dev" data-label="Email">
+              <span class="contact-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="3" y="5" width="18" height="14" rx="2" />
+                  <path d="m3 7 9 6 9-6" />
+                </svg></span>
+              <span><b>Email</b><small>brian@omondi.dev</small></span>
+              <span class="copy-hint">Copy</span>
+            </button>
+            <button class="contact-card" data-copy="+254714044854" data-label="Phone">
+              <span class="contact-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path
+                    d="M5 4h4l2 5-2.5 1.5a12 12 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z" />
+                </svg></span>
+              <span><b>Phone</b><small>+254 714 044 854</small></span>
+              <span class="copy-hint">Copy</span>
+            </button>
+            <button class="contact-card" data-url="https://github.com/brian-bill">
+              <span class="contact-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path
+                    d="M9 19c-4 1.2-4-2-5.5-2.6M15 21v-3.4a3 3 0 0 0-.8-2.3c2.7-.3 5.5-1.3 5.5-6a4.7 4.7 0 0 0-1.3-3.2 4.4 4.4 0 0 0-.1-3.2s-1-.3-3.3 1.3a11.6 11.6 0 0 0-6 0C6.7 2.6 5.7 2.9 5.7 2.9a4.4 4.4 0 0 0-.1 3.2A4.7 4.7 0 0 0 4.3 9.3c0 4.7 2.8 5.7 5.5 6a3 3 0 0 0-.8 2.3V21" />
+                </svg></span>
+              <span><b>GitHub</b><small>github.com/brian-bill</small></span>
+              <span class="copy-hint">Open</span>
+            </button>
+            <button class="contact-card" data-url="https://www.linkedin.com/in/brian-omondi-dev">
+              <span class="contact-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M6.5 9V19M6.5 5.5v.1M11 19v-6a3 3 0 0 1 6 0v6" />
+                  <path d="M11 9v10" />
+                </svg></span>
+              <span><b>LinkedIn</b><small>linkedin.com/in/brian-omondi-dev</small></span>
+              <span class="copy-hint">Open</span>
+            </button>
+            <button class="contact-card" data-url="https://omondi.dev">
+              <span class="contact-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18" />
+                </svg></span>
+              <span><b>Website</b><small>omondi.dev</small></span>
+              <span class="copy-hint">Open</span>
+            </button>
+          </div>
+          <div class="contact-note">
+            <span class="pulse" aria-hidden="true"></span>
+            <span>Based in Atlanta, Georgia · Originally from Nairobi, Kenya</span>
+          </div>
+        </div>
+      </section>
+
+      <footer class="foot">
+        <span>Pear · Vanilla 1.0</span>
+        <span>Built by Brian Omondi</span>
+      </footer>
+    </main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  </div>
+  <script src="main.js"></script>
+</body>
+
+</html>

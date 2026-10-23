@@ -1,0 +1,10 @@
+{
+  "id": "org.tiny.maps",
+  "name": "Maps",
+  "version": "1.0.0",
+  "kind": "app",
+  "icon": "Resources/icon.svg",
+  "ui": "Resources/ui/index.html",
+  "window": { "width": 860, "height": 600, "minWidth": 520, "minHeight": 400 },
+  "permissions": ["network"]
+}

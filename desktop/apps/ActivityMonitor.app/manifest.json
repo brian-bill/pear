@@ -1,0 +1,10 @@
+{
+  "id": "org.tiny.activitymonitor",
+  "name": "Activity Monitor",
+  "version": "1.0.0",
+  "kind": "app",
+  "icon": "Resources/icon.svg",
+  "ui": "Resources/ui/index.html",
+  "window": { "width": 760, "height": 480, "minWidth": 520, "minHeight": 300, "resizable": true },
+  "permissions": []
+}

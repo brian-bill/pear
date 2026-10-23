@@ -1,0 +1,10 @@
+{
+  "id": "org.tiny.reminders",
+  "name": "Reminders",
+  "version": "1.0.0",
+  "kind": "app",
+  "icon": "Resources/icon.svg",
+  "ui": "Resources/ui/index.html",
+  "window": { "width": 720, "height": 500, "minWidth": 480, "minHeight": 340 },
+  "permissions": ["fs.user", "notifications"]
+}

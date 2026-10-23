@@ -1,0 +1,10 @@
+{
+  "id": "org.tiny.weather",
+  "name": "Weather",
+  "version": "1.0.0",
+  "kind": "app",
+  "icon": "Resources/icon.svg",
+  "ui": "Resources/ui/index.html",
+  "window": { "width": 520, "height": 600, "minWidth": 400, "minHeight": 520 },
+  "permissions": ["network", "fs.user"]
+}

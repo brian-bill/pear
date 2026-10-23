@@ -1,0 +1,37 @@
+.weather { display: flex; flex-direction: column; height: 100%; }
+.toolbar { flex: none; display: flex; align-items: center; gap: 6px; padding: 8px 10px; background: var(--window-titlebar); box-shadow: 0 0.5px 0 var(--separator); }
+.toolbar input.grow { flex: 1; min-width: 0; }
+
+.results { flex: none; max-height: 166px; overflow: auto; padding: 4px 10px 6px; box-shadow: 0 0.5px 0 var(--separator); background: rgba(127,127,127,0.08); }
+.results button { display: block; width: 100%; border: 0; background: none; box-shadow: none; text-align: left; padding: 5px 8px; border-radius: 6px; }
+.results button:hover { background: rgba(127,127,127,0.2); }
+
+.saved { flex: none; display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 10px 4px; }
+.saved .chip { display: inline-flex; align-items: center; gap: 2px; border: 0.5px solid var(--separator); border-radius: 12px; background: rgba(255,255,255,0.7); }
+:root[data-theme='dark'] .saved .chip { background: rgba(255,255,255,0.1); }
+.saved .chip button { border: 0; background: none; box-shadow: none; padding: 2px 8px; border-radius: 12px; }
+.saved .chip button[aria-current='true'] { background: var(--accent); color: #fff; }
+.saved .chip .x { padding: 2px 5px; font-size: 11px; }
+
+.main { padding: 10px 14px 14px; user-select: text; }
+.hint { display: flex; flex-direction: column; gap: 3px; color: var(--text-dim); }
+.hint strong { color: var(--text); }
+
+.now { display: flex; flex-direction: column; gap: 2px; padding: 6px 2px 10px; }
+.place { font-size: 15px; font-weight: 600; }
+.temp { font-size: 46px; font-weight: 200; line-height: 1.05; }
+.desc { font-size: 15px; }
+.wind { font-size: 12px; }
+
+.days { margin: 0; padding: 0; list-style: none; }
+.days li { display: flex; align-items: baseline; gap: 10px; padding: 7px 2px; border-top: 0.5px solid var(--separator); }
+.days .day { flex: none; width: 44px; font-weight: 600; }
+.days .sky { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.days .range { flex: none; }
+
+.error { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
+.error kbd { margin-right: 6px; }
+.error .primary { margin-top: 6px; }
+
+.trim { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status { flex: none; min-height: 19px; padding: 3px 10px 6px; font-size: 11px; }

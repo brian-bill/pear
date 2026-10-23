@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><link rel="stylesheet" href="style.css"></head>
+<body>
+<div id="app">
+  <header class="toolbar" role="toolbar" aria-label="Finder toolbar">
+    <div class="segmented"><button id="back" class="icon" aria-label="Back" title="Back (Cmd+[)">‹</button><button id="fwd" class="icon" aria-label="Forward" title="Forward (Cmd+])">›</button></div>
+    <button id="up" class="icon plain" aria-label="Enclosing Folder" title="Enclosing Folder (Cmd+Up)">⌃</button>
+    <div class="segmented" role="group" aria-label="View"><button data-view="icons" aria-pressed="true" aria-label="as Icons" title="as Icons">▦</button><button data-view="list" aria-pressed="false" aria-label="as List" title="as List">☰</button></div>
+    <select id="sort" aria-label="Sort by"><option value="name">Name</option><option value="kind">Kind</option><option value="date">Date Modified</option><option value="size">Size</option></select>
+    <button id="dir" class="icon plain" aria-label="Ascending">↑</button>
+    <span class="spacer"></span>
+    <input id="q" type="search" placeholder="Search" aria-label="Search" autocomplete="off">
+  </header>
+  <div class="layout">
+    <nav id="sidebar" class="sidebar" aria-label="Sidebar"></nav>
+    <main class="content">
+      <div id="scopebar" class="scopebar" hidden><span class="dim">Search:</span><div class="segmented" role="group" aria-label="Search scope"><button data-scope="mac" aria-pressed="false">This Mac</button><button id="scope-folder" data-scope="folder" aria-pressed="true">This Folder</button></div><span class="grow"></span><button id="save-search">Save</button></div>
+      <div id="scroll" class="scroll"><div id="files" tabindex="0"></div></div>
+      <div id="pathbar" class="pathbar" role="navigation" aria-label="Path"></div>
+      <footer id="status" class="status" role="status"></footer>
+      <div id="preview" class="preview" role="dialog" aria-label="Quick Look" hidden></div>
+    </main>
+  </div>
+</div>
+<div id="info" class="info" aria-live="polite"></div>
+<script src="main.js"></script>
+</body>
+</html>

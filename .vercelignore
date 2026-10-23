@@ -1,0 +1,11 @@
+# Keep deployment uploads small. Kernel artifacts in vanilla/kernel/pkg and
+# vanilla/kernel/dist must stay: the Vercel build reuses pkg/ for the Wasm module.
+node_modules
+**/node_modules
+**/test-results
+**/playwright-report
+**/target
+**/*.pdf
+.vercel
+.env*
+.DS_Store

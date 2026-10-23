@@ -1,0 +1,27 @@
+.app { height: 100%; }
+
+/* left pane: search field, new button and the note list */
+.notes-side { width: 240px; flex: none; display: flex; flex-direction: column; padding: 6px; }
+.searchrow { display: flex; gap: 5px; padding: 2px 2px 6px; align-items: center; flex: none; }
+.searchrow .grow { min-width: 0; }
+#new { flex: none; min-width: 26px; }
+.notelist { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
+.note { display: flex; flex-direction: column; gap: 2px; align-items: stretch; padding: 6px 10px; border: 0;
+  background: none; box-shadow: none; border-radius: 7px; width: 100%; min-width: 0; text-align: left;
+  font: inherit; cursor: default; }
+.note:hover { background: rgba(127, 127, 127, 0.14); }
+.note.sel, .note.sel:hover { background: var(--accent); color: #fff; }
+.note:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+.ntitle { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nfoot { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+.nsnippet { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 11px; color: var(--text-dim); }
+.ntime { flex: none; font-size: 11px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.note.sel .nsnippet, .note.sel .ntime { color: rgba(255, 255, 255, 0.85); }
+.empty { padding: 12px 10px; font-size: 12px; }
+
+/* right pane: the note itself, plain text where the first line is the title */
+.editor { flex: 1; min-width: 0; display: flex; background: var(--window-bg); }
+textarea#text { flex: 1; min-width: 0; resize: none; border: 0; border-radius: 0; box-shadow: none; outline: 0;
+  padding: 12px 16px; background: transparent; color: var(--text); font: var(--fs)/1.55 var(--font); overflow: auto; }
+textarea#text::placeholder { color: var(--text-dim); }

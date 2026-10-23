@@ -1,0 +1,10 @@
+{
+  "id": "org.tiny.finder",
+  "name": "Finder",
+  "version": "1.0.0",
+  "kind": "app",
+  "icon": "Resources/icon.svg",
+  "ui": "Resources/ui/index.html",
+  "window": { "width": 860, "height": 520, "minWidth": 520, "minHeight": 300, "resizable": true },
+  "permissions": ["fs.user", "fs.all", "clipboard"]
+}

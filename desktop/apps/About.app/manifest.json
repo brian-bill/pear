@@ -1,0 +1,10 @@
+{
+  "id": "org.tiny.about",
+  "name": "About This Pear",
+  "version": "1.0.0",
+  "kind": "app",
+  "icon": "Resources/icon.svg",
+  "ui": "Resources/ui/index.html",
+  "window": { "width": 380, "height": 360, "resizable": false },
+  "permissions": []
+}

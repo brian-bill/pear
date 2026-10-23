@@ -1,0 +1,39 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><link rel="stylesheet" href="style.css"></head>
+<body>
+<div class="app" id="app">
+  <div id="findbar" class="toolbar findbar" hidden role="search">
+    <div class="stack grow">
+      <div class="row">
+        <input id="find" type="search" class="grow" placeholder="Find" aria-label="Find">
+        <label class="row" title="Match case"><input id="case" type="checkbox"> Aa</label>
+        <button id="prev" class="icon" title="Previous match (Shift+Cmd+G)" aria-label="Previous match">&#8249;</button>
+        <button id="next" class="icon" title="Next match (Cmd+G)" aria-label="Next match">&#8250;</button>
+        <span id="count" class="dim count" aria-live="polite"></span>
+        <button id="closefind" class="plain icon" title="Close" aria-label="Close find bar">&#10005;</button>
+      </div>
+      <div class="row">
+        <input id="repl" type="text" class="grow" placeholder="Replace" aria-label="Replace with">
+        <button id="replace">Replace</button>
+        <button id="replall">Replace All</button>
+      </div>
+    </div>
+  </div>
+  <div class="editor">
+    <div id="gutter" class="gutter" aria-hidden="true" hidden></div>
+    <textarea id="text" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Document"></textarea>
+  </div>
+  <div class="status" id="status">
+    <span id="pos">Ln 1, Col 1</span>
+    <span id="chars">0 characters</span>
+    <span class="spacer"></span>
+    <span id="ro" class="ro" hidden>Read-only</span>
+    <span id="eol">LF</span>
+    <span>UTF-8</span>
+    <span id="kind">Plain Text</span>
+  </div>
+</div>
+<script src="main.js"></script>
+</body>
+</html>

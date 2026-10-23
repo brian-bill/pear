@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <div id="browser" class="browser">
+    <div class="toolbar">
+      <button id="back" class="plain icon nav" title="Back (⌘[)" aria-label="Back" disabled>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M14.5 6L8 12l6.5 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"
+            stroke-linejoin="round" />
+        </svg>
+      </button>
+      <button id="forward" class="plain icon nav" title="Forward (⌘])" aria-label="Forward" disabled>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M9.5 6L16 12l-6.5 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"
+            stroke-linejoin="round" />
+        </svg>
+      </button>
+      <button id="reload" class="plain icon nav" title="Reload (⌘R)" aria-label="Reload">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M19 12a7 7 0 11-2.05-4.95M19 3.5V7h-3.5" fill="none" stroke="currentColor" stroke-width="2.2"
+            stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+      <input id="url" type="text" class="grow" placeholder="Type a web address and press Return" spellcheck="false"
+        aria-label="Address">
+      <button id="go">Go</button>
+    </div>
+    <div class="stage">
+      <div id="page" class="page" role="document" aria-label="Page">
+        <iframe id="frame" title="Page" sandbox="allow-scripts allow-forms" referrerpolicy="no-referrer"></iframe>
+      </div>
+    </div>
+  </div>
+  <script src="main.js"></script>
+</body>
+
+</html>

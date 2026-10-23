@@ -1,0 +1,20 @@
+.stocks { display: flex; flex-direction: column; height: 100%; }
+.toolbar { flex: none; display: flex; align-items: center; gap: 6px; padding: 7px 10px; background: var(--window-titlebar); box-shadow: 0 0.5px 0 var(--separator); }
+.toolbar .spacer { flex: 1; }
+.asof { flex: none; min-height: 17px; padding: 4px 12px 0; font-size: 11px; user-select: text; }
+
+.main { padding: 0 0 10px; user-select: text; }
+.main table + table { margin-top: 14px; }
+.num, th.num { text-align: right; }
+table.list td:first-child { max-width: 0; }
+table.list td:nth-child(2), table.list th:nth-child(2) { width: 90px; }
+table.list td:nth-child(3), table.list th:nth-child(3) { width: 110px; }
+.code { font: 11px var(--mono); color: var(--text-dim); }
+.missing { color: var(--text-dim); }
+
+.note { margin: 14px 12px 0; font-size: 11px; }
+.error { margin: 12px; display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
+.error kbd { margin-right: 6px; }
+.error .primary { margin-top: 6px; }
+
+.status { flex: none; min-height: 19px; padding: 3px 10px 6px; font-size: 11px; }

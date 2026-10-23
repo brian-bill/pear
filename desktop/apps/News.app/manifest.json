@@ -1,0 +1,10 @@
+{
+  "id": "org.tiny.news",
+  "name": "News",
+  "version": "1.0.0",
+  "kind": "app",
+  "icon": "Resources/icon.svg",
+  "ui": "Resources/ui/index.html",
+  "window": { "width": 640, "height": 560, "minWidth": 460, "minHeight": 400 },
+  "permissions": ["network"]
+}

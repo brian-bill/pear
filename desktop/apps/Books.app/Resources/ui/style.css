@@ -1,0 +1,84 @@
+/* Books on top of the SDK's base styles: the window itself stays transparent. */
+
+.view { display: flex; flex-direction: column; height: 100%; }
+.view[hidden] { display: none; }
+
+/* ---- library */
+
+#grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+  padding: 12px;
+  align-content: start;
+}
+
+#empty { margin: auto; padding: 0 40px; text-align: center; color: var(--text-dim); }
+#empty h2 { margin: 0 0 6px; font-size: 16px; color: var(--text); }
+#empty p { margin: 0; line-height: 1.5; }
+
+.book {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 8px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  box-shadow: none;
+  text-align: left;
+}
+.book:hover { background: rgba(127, 127, 127, 0.14); }
+.book:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.cover {
+  display: flex;
+  align-items: flex-start;
+  aspect-ratio: 3 / 4;
+  padding: 9px 11px;
+  border-radius: 6px;
+  color: #fff;
+  font: 700 22px var(--font);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+.cover .initial { line-height: 1; }
+.book.missing .cover { background: rgba(127, 127, 127, 0.35) !important; }
+
+.btitle { font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+.bsub { font-size: 11px; color: var(--text-dim); overflow-wrap: anywhere; }
+
+/* ---- reader */
+
+#reader { --fs: 17px; }
+#reader[data-view='sepia'] { --ink: #54473c; --paper: #f4ecd8; }
+#reader[data-view='sepia'] .dim { color: rgba(84, 71, 60, 0.62); }
+#reader[data-view='light'] { --ink: var(--text); --paper: var(--window-bg); }
+#reader[data-view='light'] .dim { color: var(--text-dim); }
+#reader[data-view='dark'] { --ink: #eae8e4; --paper: #242426; }
+#reader[data-view='dark'] .dim { color: rgba(234, 232, 228, 0.55); }
+
+#page {
+  overflow: auto;
+  padding: 20px 0 30px;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+#flow {
+  position: relative;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 0 30px;
+  font-family: Georgia, 'Times New Roman', serif;
+  line-height: 1.65; /* the restore math reads this exact value back */
+  font-size: var(--fs);
+}
+#reader[data-font='mono'] #flow { font-family: var(--mono); }
+
+#flow section { margin: 0 0 1.6em; }
+#flow h2 { margin: 0 0 0.8em; font-size: 1.25em; font-weight: 700; }
+#flow p { margin: 0 0 0.9em; white-space: pre-wrap; }
+
+#flow .hint { display: block; margin: 2.5em 0 0; text-align: center; color: var(--text-dim); }

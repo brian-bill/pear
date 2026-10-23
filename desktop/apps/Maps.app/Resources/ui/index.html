@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><link rel="stylesheet" href="style.css"></head>
+<body>
+<div class="app">
+  <div class="toolbar">
+    <div class="searchwrap">
+      <input id="search" type="text" placeholder="Search cities…" aria-label="Search cities" autocomplete="off" spellcheck="false">
+      <div id="suggest" class="suggest" aria-label="Matching cities" hidden></div>
+    </div>
+    <span class="grow"></span>
+    <button id="out" class="icon" title="Zoom out (Cmd+-)" aria-label="Zoom out">&#8722;</button>
+    <button id="in" class="icon" title="Zoom in (Cmd+=)" aria-label="Zoom in">+</button>
+  </div>
+  <div id="stage" class="mapwrap" tabindex="0" aria-label="Pear World map">
+    <svg id="map" xmlns="http://www.w3.org/2000/svg"></svg>
+    <div id="card" class="card" hidden role="region" aria-label="Selected city">
+      <div class="crown"><span id="cname"></span><button id="closecity" class="plain icon" title="Close" aria-label="Close city card">&#215;</button></div>
+      <div id="cmeta" class="dim"></div>
+      <div class="crow"><button id="zoomto">Zoom to</button></div>
+    </div>
+    <div id="toast" class="toast" hidden></div>
+  </div>
+  <div class="status">
+    <span id="src" class="dim">Pear World &middot; hand-drawn, offline</span>
+    <span class="grow"></span>
+    <span id="scale" aria-live="polite">100%</span>
+  </div>
+</div>
+<script src="main.js"></script>
+</body>
+</html>

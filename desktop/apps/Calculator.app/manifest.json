@@ -1,0 +1,10 @@
+{
+  "id": "org.tiny.calculator",
+  "name": "Calculator",
+  "version": "1.0.0",
+  "kind": "app",
+  "icon": "Resources/icon.svg",
+  "ui": "Resources/ui/index.html",
+  "window": { "width": 260, "height": 400, "resizable": false },
+  "permissions": ["clipboard"]
+}

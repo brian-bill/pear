@@ -1,0 +1,6 @@
+packages:
+  - vanilla/kernel
+  - desktop
+
+allowBuilds:
+  esbuild: true

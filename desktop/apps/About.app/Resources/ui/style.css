@@ -1,0 +1,6 @@
+.about { padding: 24px 28px; display: grid; gap: 14px; justify-items: center; text-align: center; }
+.about h1 { margin: 0; font-size: 22px; font-weight: 600; }
+.about dl { display: grid; grid-template-columns: auto auto; gap: 4px 14px; margin: 0; text-align: left; }
+.about dt { color: var(--text-dim); text-align: right; }
+.about dd { margin: 0; user-select: text; }
+.about .logo { width: 64px; height: 64px; border-radius: 16px; }

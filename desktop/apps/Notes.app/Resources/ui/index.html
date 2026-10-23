@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><link rel="stylesheet" href="style.css"></head>
+<body>
+<div class="app">
+  <div class="layout">
+    <aside class="sidebar notes-side">
+      <div class="searchrow">
+        <input id="search" type="search" class="grow" placeholder="Search" aria-label="Search notes">
+        <button id="new" class="icon" title="New note (⌘N)" aria-label="New note">+</button>
+      </div>
+      <div id="list" class="notelist" role="listbox" aria-label="Notes"></div>
+      <p id="empty" class="empty dim" hidden>No notes yet</p>
+    </aside>
+    <main class="content">
+      <div class="editor">
+        <textarea id="text" spellcheck="false" autocapitalize="off" autocomplete="off" readonly
+          aria-label="Note text" placeholder="No note selected"></textarea>
+      </div>
+    </main>
+  </div>
+</div>
+<script src="main.js"></script>
+</body>
+</html>

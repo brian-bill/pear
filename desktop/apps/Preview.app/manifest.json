@@ -1,0 +1,19 @@
+{
+  "id": "org.tiny.preview",
+  "name": "Preview",
+  "version": "1.0.0",
+  "kind": "app",
+  "icon": "Resources/icon.svg",
+  "ui": "Resources/ui/index.html",
+  "window": { "width": 720, "height": 520, "minWidth": 360, "minHeight": 260 },
+  "permissions": ["fs.user"],
+  "documentTypes": [
+    { "ext": ["png"], "role": "viewer", "uti": "public.png" },
+    { "ext": ["jpg", "jpeg"], "role": "viewer", "uti": "public.jpeg" },
+    { "ext": ["gif"], "role": "viewer", "uti": "com.compuserve.gif" },
+    { "ext": ["webp"], "role": "viewer", "uti": "org.webmproject.webp" },
+    { "ext": ["svg"], "role": "viewer", "uti": "public.svg-image" },
+    { "ext": ["bmp"], "role": "viewer", "uti": "com.microsoft.bmp" },
+    { "ext": ["tif", "tiff"], "role": "viewer", "uti": "public.tiff" }
+  ]
+}

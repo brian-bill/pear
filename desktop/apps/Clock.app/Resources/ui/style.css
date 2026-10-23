@@ -1,0 +1,37 @@
+/* Clock app. Base controls come from sdk/base.css; only app-specific layout lives here. */
+.app { display: flex; flex-direction: column; height: 100%; outline: 0; }
+.views { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.segmented.tabs button { padding: 2px 14px; font-size: 12px; }
+.segmented button[aria-selected='true'] { background: rgba(127,127,127,0.3); }
+.big { font-size: 52px; font-weight: 200; line-height: 1; letter-spacing: 0.02em; font-variant-numeric: tabular-nums; user-select: text; }
+.center { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 16px; }
+.stack-top { justify-content: flex-start; }
+.hint { font-size: 11px; }
+
+/* World */
+.world { flex: 1; min-height: 0; padding: 10px 12px 12px; }
+.city-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+.tile { padding: 9px 12px 8px; border-radius: 10px; background: rgba(127,127,127,0.12); box-shadow: 0 0 0 0.5px rgba(127,127,127,0.08); }
+.tile .city { font-size: 12px; color: var(--text-dim); }
+.tile .time { font-size: 26px; font-weight: 200; line-height: 1.2; font-variant-numeric: tabular-nums; user-select: text; }
+.tile .meta { display: flex; gap: 8px; font-size: 11px; color: var(--text-dim); }
+.add-city { position: relative; flex: none; display: flex; padding: 8px 12px; box-shadow: 0 -0.5px 0 var(--separator) inset; }
+.add-city input { flex: 1; }
+.results { position: absolute; left: 12px; right: 12px; bottom: 44px; z-index: 3; max-height: 200px; overflow: auto; padding: 4px; display: flex; flex-direction: column; gap: 1px; border-radius: 10px; background: var(--window-bg); box-shadow: 0 6px 24px rgba(0,0,0,0.25), 0 0 0 0.5px var(--separator); }
+.result { display: flex; gap: 8px; width: 100%; text-align: left; border: 0; background: none; border-radius: 7px; box-shadow: none; padding: 5px 10px; }
+.result:hover { background: rgba(127,127,127,0.18); }
+.result .zone { margin-left: auto; color: var(--text-dim); font-size: 11px; }
+.result-note { padding: 6px 10px; font-size: 12px; }
+
+/* Timer */
+.timer-inputs { display: flex; gap: 12px; }
+.timer-inputs.off { opacity: 0.45; pointer-events: none; }
+.timer-inputs label { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 11px; color: var(--text-dim); }
+.timer-inputs input { width: 64px; text-align: center; font-size: 18px; }
+
+/* Stopwatch */
+.laps { width: min(420px, 100%); flex: 1 1 auto; min-height: 0; overflow: auto; font-variant-numeric: tabular-nums; }
+.lap { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-top: 0.5px solid var(--separator); }
+.lap .num { color: var(--text-dim); flex: none; }
+.lap .total { margin-left: auto; color: var(--text-dim); }

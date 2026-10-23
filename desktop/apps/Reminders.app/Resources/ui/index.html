@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><link rel="stylesheet" href="style.css"></head>
+<body>
+<div class="app">
+  <div class="layout">
+    <nav id="sidebar" class="sidebar" aria-label="Lists"></nav>
+    <main class="content">
+      <header class="listhead">
+        <h2 id="listname">Reminders</h2>
+        <span id="listsub" class="dim"></span>
+      </header>
+      <div id="rows" class="rows" role="list" aria-label="Reminders"></div>
+      <footer class="addbar">
+        <span class="addcircle" aria-hidden="true"></span>
+        <input id="add" type="text" placeholder="Add Reminder" autocomplete="off" aria-label="Add a reminder" spellcheck="false">
+      </footer>
+    </main>
+  </div>
+</div>
+<script src="main.js"></script>
+</body>
+</html>

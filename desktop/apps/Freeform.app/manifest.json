@@ -1,0 +1,16 @@
+{
+  "id": "org.tiny.freeform",
+  "name": "Freeform",
+  "version": "1.0.0",
+  "kind": "app",
+  "icon": "Resources/icon.svg",
+  "ui": "Resources/ui/index.html",
+  "window": { "width": 900, "height": 640, "minWidth": 560, "minHeight": 420 },
+  "permissions": ["fs.user"],
+  "typeDefinitions": [
+    { "uti": "org.tiny.freeboard", "conformsTo": ["public.data"], "description": "Freeform board", "ext": ["freeboard"] }
+  ],
+  "documentTypes": [
+    { "ext": ["freeboard"], "uti": "org.tiny.freeboard", "role": "editor" }
+  ]
+}

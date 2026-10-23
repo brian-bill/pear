@@ -1,0 +1,10 @@
+{
+  "id": "org.tiny.profile",
+  "name": "Profile",
+  "version": "1.0.0",
+  "kind": "app",
+  "icon": "Resources/icon.svg",
+  "ui": "Resources/ui/index.html",
+  "window": { "title": "Profile", "width": 1040, "height": 680, "minWidth": 680, "minHeight": 460 },
+  "permissions": []
+}

@@ -1,0 +1,16 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Smoke C</title>
+  <link rel="stylesheet" href="c.css">
+</head>
+<body>
+  <h1 id="page-c">Gamma page</h1>
+  <p id="css-out">styled by a stylesheet</p>
+  <p id="js-out">external script did not run</p>
+  <p id="inline-out">inline script did not run</p>
+  <script src="c.js"></script>
+  <script>document.getElementById('inline-out').textContent = 'inline script ran'</script>
+</body>
+</html>

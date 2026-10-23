@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Pear">
+  <defs>
+    <linearGradient id="pt" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fbfcf5"/>
+      <stop offset="1" stop-color="#e9f3d8"/>
+    </linearGradient>
+    <linearGradient id="pb" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#b9e77f"/>
+      <stop offset="0.55" stop-color="#88c94b"/>
+      <stop offset="1" stop-color="#5d9c2d"/>
+    </linearGradient>
+    <linearGradient id="pl" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#49d16a"/>
+      <stop offset="1" stop-color="#1d9e45"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#pt)"/>
+  <path d="M32 19.5c-5.6 0-7.6 5.6-9.5 10.2-1.9 4.7-9.2 7.5-9.2 14.8 0 8.3 7.5 13.8 18.7 13.8s18.7-5.5 18.7-13.8c0-7.3-7.3-10.1-9.2-14.8-1.9-4.6-3.9-10.2-9.5-10.2z" fill="url(#pb)"/>
+  <path d="M31.2 21.5c-.2-5.1 1.4-9.4 4.7-13.1" fill="none" stroke="#6b4a28" stroke-width="3.6" stroke-linecap="round"/>
+  <path d="M36 13.2c3.5-5.5 11.4-6.7 16.5-3.7-3.3 5.7-11.4 7.7-16.5 3.7z" fill="url(#pl)"/>
+  <ellipse cx="24.5" cy="37" rx="3.6" ry="5.2" fill="#ffffff" opacity="0.28" transform="rotate(28 24.5 37)"/>
+</svg>

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Books</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- The library (this is also the window a plain launch shows). -->
+  <div id="library" class="view">
+    <div class="toolbar">
+      <strong>Books</strong>
+      <span class="spacer"></span>
+      <button id="add" class="primary">Add Books…</button>
+    </div>
+    <div class="content">
+      <div id="grid" class="scroll" role="list" aria-label="Your books"></div>
+      <div id="empty" class="stack" hidden>
+        <h2>Your library is empty</h2>
+        <p>Add a plain-text book to start reading.<br>File &gt; Add Books&hellip; (⌘O) picks .txt and .md files anywhere you like.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- A reader window: one book. The reading pane is the scroll area itself. -->
+  <div id="reader" class="view" hidden>
+    <div class="toolbar">
+      <button id="tolibrary" class="plain">Library</button>
+      <span class="grow"></span>
+      <span id="progress" class="dim" aria-live="polite"></span>
+    </div>
+    <div id="page" class="content" tabindex="-1" aria-label="Book content">
+      <article id="flow"></article>
+    </div>
+  </div>
+
+  <script src="main.js"></script>
+</body>
+</html>

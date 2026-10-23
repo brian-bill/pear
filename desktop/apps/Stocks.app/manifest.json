@@ -1,0 +1,10 @@
+{
+  "id": "org.tiny.stocks",
+  "name": "Stocks",
+  "version": "1.0.0",
+  "kind": "app",
+  "icon": "Resources/icon.svg",
+  "ui": "Resources/ui/index.html",
+  "window": { "width": 560, "height": 520, "minWidth": 420, "minHeight": 380 },
+  "permissions": ["network", "fs.user"]
+}

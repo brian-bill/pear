@@ -1,0 +1,47 @@
+/* Design tokens. Apps pick these up as CSS custom properties. */
+:root {
+  --accent: #007aff;
+  --bg-desktop: linear-gradient(135deg, #5b8def 0%, #8e6ee8 45%, #e07bb5 100%);
+  --window-bg: rgba(246, 246, 246, 0.86);
+  --window-titlebar: rgba(236, 236, 236, 0.9);
+  --window-border: rgba(0, 0, 0, 0.18);
+  --window-shadow: 0 10px 30px rgba(0, 0, 0, 0.28), 0 0 0 0.5px rgba(0, 0, 0, 0.25);
+  --window-shadow-inactive: 0 4px 14px rgba(0, 0, 0, 0.18), 0 0 0 0.5px rgba(0, 0, 0, 0.2);
+  --menubar-bg: rgba(250, 250, 250, 0.72);
+  --menu-bg: rgba(248, 248, 248, 0.94);
+  --menu-hover: var(--accent);
+  --dock-bg: rgba(255, 255, 255, 0.35);
+  --text: #1d1d1f;
+  --text-dim: #6e6e73;
+  --separator: rgba(0, 0, 0, 0.12);
+  --terminal-bg: #1e1e1e;
+  --terminal-fg: #e6e6e6;
+  --blur: saturate(180%) blur(20px);
+  --radius-window: 10px;
+  --menubar-height: calc(28px + env(safe-area-inset-top, 0px));
+  --dock-size: 52px;
+  /* Space the browser cannot draw in (notches, home indicator). The desktop background fills it; the UI keeps clear. */
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --font: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', system-ui, sans-serif;
+  --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+:root[data-theme='dark'] {
+  --bg-desktop: linear-gradient(135deg, #1b2a4a 0%, #3a2a5c 50%, #5a2a48 100%);
+  --window-bg: rgba(40, 40, 42, 0.88);
+  --window-titlebar: rgba(52, 52, 54, 0.92);
+  --window-border: rgba(255, 255, 255, 0.14);
+  --menubar-bg: rgba(30, 30, 32, 0.6);
+  --menu-bg: rgba(44, 44, 46, 0.95);
+  --dock-bg: rgba(40, 40, 42, 0.45);
+  --text: #f5f5f7;
+  --text-dim: #a1a1a6;
+  --separator: rgba(255, 255, 255, 0.14);
+}
+:root[data-reduce-motion='true'] * { transition: none !important; animation: none !important; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+@media (prefers-reduced-transparency: reduce) {
+  :root { --window-bg: #f2f2f2; --menubar-bg: #f2f2f2; --menu-bg: #f8f8f8; --dock-bg: #d8d8d8; --blur: none; }
+  :root[data-theme='dark'] { --window-bg: #2a2a2c; --menubar-bg: #1e1e20; --menu-bg: #2c2c2e; --dock-bg: #333; }
+}

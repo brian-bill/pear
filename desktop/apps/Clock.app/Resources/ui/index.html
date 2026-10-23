@@ -1,0 +1,50 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><link rel="stylesheet" href="style.css"></head>
+<body>
+<div class="app" id="app" tabindex="-1">
+  <div class="toolbar">
+    <div class="segmented tabs" role="tablist" aria-label="Clock view">
+      <button id="tab-world" role="tab" aria-selected="true" aria-controls="view-world">World</button>
+      <button id="tab-timer" role="tab" aria-selected="false" aria-controls="view-timer">Timer</button>
+      <button id="tab-stopwatch" role="tab" aria-selected="false" aria-controls="view-stopwatch">Stopwatch</button>
+    </div>
+  </div>
+  <main class="views">
+    <section id="view-world" class="pane world-pane" role="tabpanel" aria-labelledby="tab-world">
+      <div class="scroll world">
+        <div id="cities" class="city-grid" role="list"></div>
+      </div>
+      <div class="add-city">
+        <input id="city-query" type="search" placeholder="Search cities to add…" aria-label="Search cities to add">
+        <div id="city-results" class="results" role="listbox" aria-label="Matching cities" hidden></div>
+      </div>
+    </section>
+    <section id="view-timer" class="pane" role="tabpanel" aria-labelledby="tab-timer" hidden>
+      <div class="center">
+        <div class="timer-inputs" id="timer-inputs">
+          <label for="t-h">hours<input id="t-h" type="number" min="0" max="23" value="0" inputmode="numeric"></label>
+          <label for="t-m">minutes<input id="t-m" type="number" min="0" max="59" value="0" inputmode="numeric"></label>
+          <label for="t-s">seconds<input id="t-s" type="number" min="0" max="59" value="0" inputmode="numeric"></label>
+        </div>
+        <div id="timer-display" class="big" role="timer">00:00</div>
+        <button id="timer-action" class="primary">Start</button>
+        <div class="hint dim">Enter starts</div>
+      </div>
+    </section>
+    <section id="view-stopwatch" class="pane" role="tabpanel" aria-labelledby="tab-stopwatch" hidden>
+      <div class="center stack-top">
+        <div id="sw-display" class="big" role="timer">00:00.00</div>
+        <div class="row">
+          <button id="sw-start" class="primary">Start</button>
+          <button id="sw-lap" disabled>Lap</button>
+          <button id="sw-reset" disabled>Reset</button>
+        </div>
+        <div id="laps" class="laps" aria-label="Laps"></div>
+      </div>
+    </section>
+  </main>
+</div>
+<script src="main.js"></script>
+</body>
+</html>

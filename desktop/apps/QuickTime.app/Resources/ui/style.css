@@ -1,0 +1,39 @@
+.app { display: flex; flex-direction: column; height: 100%; }
+.spacer { flex: 1; }
+
+.stage { position: relative; flex: 1; min-height: 0; overflow: hidden; background: #0b0b0d; outline: 0; }
+.stage video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.stage video[hidden] { display: none; }
+.empty { position: absolute; inset: 0; display: grid; place-content: center; }
+
+.help { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 14px;
+  background: rgba(11, 11, 13, 0.55); color: #fff; }
+.help[hidden] { display: none; }
+.help span { font-size: 12px; opacity: 0.85; text-align: center; }
+
+.mbtn { width: 34px; height: 34px; flex: none; display: grid; place-content: center; border: 0; background: none; box-shadow: none; border-radius: 50%; padding: 0; }
+.mbtn svg { width: 21px; height: 21px; }
+.mbtn:hover { background: rgba(127, 127, 127, 0.15); }
+.mbtn.main { width: 42px; height: 42px; background: var(--accent); color: #fff; }
+.mbtn.main svg { width: 24px; height: 24px; }
+.mbtn.main:hover { background: var(--accent); filter: brightness(1.08); }
+.mbtn:disabled { opacity: 0.35; }
+#helpplay { font-size: 15px; padding-left: 4px; }
+
+.transport { flex: none; display: flex; gap: 10px; align-items: center; padding: 10px 16px;
+  background: var(--window-titlebar); box-shadow: 0 0.5px 0 var(--separator); }
+.time { font-size: 11px; font-variant-numeric: tabular-nums; color: var(--text-dim); width: 34px; flex: none; text-align: center; }
+input[type='range'] { flex: 1; min-width: 0; accent-color: var(--accent); height: 18px; }
+.vchip { width: 17px; height: 17px; flex: none; color: var(--text-dim); }
+#vol { flex: 0 1 90px; min-width: 56px; }
+
+.status { display: flex; gap: 14px; padding: 3px 10px; font-size: 11px; color: var(--text-dim);
+  background: var(--window-titlebar); box-shadow: 0 -0.5px 0 var(--separator); flex: none; white-space: nowrap; }
+.status #file { overflow: hidden; text-overflow: ellipsis; }
+
+.info { position: absolute; right: 10px; top: 10px; margin: 0; padding: 10px 14px; display: grid; grid-template-columns: auto auto; gap: 3px 12px;
+  border-radius: 10px; background: rgba(20, 20, 22, 0.82); color: #fff; font-size: 12px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3), 0 0 0 0.5px var(--separator); max-width: 70%; cursor: default; user-select: text; }
+.info[hidden] { display: none; }
+.info dt { color: rgba(255, 255, 255, 0.6); text-align: right; }
+.info dd { margin: 0; word-break: break-all; }

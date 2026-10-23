@@ -1,0 +1,19 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><link rel="stylesheet" href="style.css"></head>
+<body>
+<div class="news">
+  <div class="toolbar">
+    <button id="reload" class="plain" title="Reload (⌘R)" aria-label="Reload">⟳ Reload</button>
+    <span class="spacer"></span>
+    <button id="apropos" class="plain" aria-label="About News">About</button>
+  </div>
+  <div class="scroll main" role="main" aria-label="Front page">
+    <div id="error" class="card error" hidden></div>
+    <div id="list" class="list" aria-label="Front page stories"></div>
+  </div>
+  <div id="status" class="status dim" role="status" aria-live="polite"></div>
+</div>
+<script src="main.js"></script>
+</body>
+</html>

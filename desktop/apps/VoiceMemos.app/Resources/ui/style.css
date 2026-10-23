@@ -1,0 +1,31 @@
+.app { display: flex; flex-direction: column; height: 100%; }
+.trim { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.memos { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px 10px; display: flex; flex-direction: column; gap: 3px; }
+
+.memo { display: flex; gap: 10px; align-items: center; width: 100%; text-align: left; font: inherit; font-size: 13px;
+  border: 0; background: none; box-shadow: none; padding: 7px 10px; border-radius: 7px; cursor: default; }
+.memo:hover { background: rgba(127, 127, 127, 0.14); }
+.memo.sel { background: var(--accent); color: #fff; }
+.memo .name { flex: 1 1 auto; }
+.memo .dur { flex: none; min-width: 32px; text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--text-dim); }
+.memo .date { flex: none; font-size: 11px; color: var(--text-dim); }
+.memo.sel .dur, .memo.sel .date { color: rgba(255, 255, 255, 0.85); }
+
+.empty { flex: none; padding: 26px 24px 10px; display: grid; gap: 5px; justify-items: center; text-align: center; color: var(--text-dim); font-size: 13px; }
+.empty .dim { font-size: 12px; }
+.note { flex: none; margin: 4px 16px; padding: 8px 12px; border-radius: 8px; background: rgba(229, 72, 77, 0.12);
+  color: var(--text); font-size: 12px; text-align: center; }
+
+.transport { flex: none; display: flex; gap: 10px; align-items: center; padding: 10px 16px 14px;
+  background: var(--window-titlebar); box-shadow: 0 -0.5px 0 var(--separator); }
+.mbtn { width: 34px; height: 34px; flex: none; display: grid; place-content: center; border: 0; background: none; box-shadow: none; border-radius: 50%; padding: 0; }
+.mbtn svg { width: 20px; height: 20px; }
+.mbtn:hover:not(:disabled) { background: rgba(127, 127, 127, 0.15); }
+.mbtn.rec { color: #e5484d; }
+.mbtn.rec svg.stoprec { width: 16px; height: 16px; }
+.mbtn.main { width: 42px; height: 42px; background: var(--accent); color: #fff; }
+.mbtn.main svg { width: 23px; height: 23px; }
+.mbtn.main:hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); }
+.mbtn.main:disabled { filter: saturate(0.25); opacity: 0.6; }
+.time { font-size: 11px; font-variant-numeric: tabular-nums; color: var(--text-dim); width: 34px; flex: none; text-align: right; }

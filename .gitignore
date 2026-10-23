@@ -1,0 +1,9 @@
+.vercel
+.env*
+node_modules
+dist
+target
+contracts
+stack
+pkg
+test-results

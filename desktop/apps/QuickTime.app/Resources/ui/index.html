@@ -1,0 +1,51 @@
+<!doctype html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <div class="app">
+    <div id="stage" class="stage" tabindex="0" aria-label="Movie">
+      <video id="video" preload="metadata"></video>
+      <div id="empty" class="empty dim">Open a movie with File &gt; Open (Cmd+O)</div>
+      <div id="help" class="help" hidden>
+        <button id="helpplay" class="mbtn main" title="Play" aria-label="Play">&#9654;</button>
+        <span>The browser starts sound only after a click in this window.</span>
+      </div>
+      <dl id="info" class="info" hidden></dl>
+    </div>
+    <div class="transport">
+      <button id="prev" class="mbtn" title="Previous media (⌘←)" aria-label="Previous media">
+        <svg viewBox="0 0 24 24">
+          <path d="M7 5v14" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" />
+          <path d="M19 5l-9 7 9 7z" fill="currentColor" />
+        </svg>
+      </button>
+      <button id="play" class="mbtn main" title="Play (Space)" aria-label="Play">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M8 5.5v13l11-6.5z" fill="currentColor" />
+        </svg>
+      </button>
+      <button id="next" class="mbtn" title="Next media (⌘→)" aria-label="Next media">
+        <svg viewBox="0 0 24 24">
+          <path d="M17 5v14" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" />
+          <path d="M5 5l9 7-9 7z" fill="currentColor" />
+        </svg>
+      </button>
+      <span id="cur" class="time">0:00</span>
+      <input id="scrub" type="range" min="0" max="0" step="0.01" value="0" aria-label="Playback position" disabled>
+      <span id="rest" class="time dim">-0:00</span>
+      <svg class="vchip" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 10v4h4l5 4V6l-5 4z" fill="currentColor" />
+        <path d="M16 9a5 5 0 010 6" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" />
+      </svg>
+      <input id="vol" type="range" min="0" max="1" step="0.05" value="1" aria-label="Volume" title="Volume">
+    </div>
+  </div>
+  <script src="main.js"></script>
+</body>
+
+</html>

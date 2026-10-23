@@ -1,0 +1,35 @@
+.app { display: flex; flex-direction: column; height: 100%; }
+.trim { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.now { display: flex; gap: 14px; align-items: center; padding: 18px 18px 12px; flex: none; }
+.art { width: 92px; height: 92px; flex: none; border-radius: 12px; display: grid; place-content: center;
+  background: linear-gradient(160deg, #ff8aa6, #e8255f); color: #fff; box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.12); }
+.art svg { width: 54px; height: 54px; }
+.titles { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.title { font-size: 19px; font-weight: 600; }
+.sub { font-size: 12px; }
+
+.queue { flex: 1; min-height: 0; overflow: auto; padding: 2px 10px 10px; display: flex; flex-direction: column; gap: 1px; }
+.queue:empty { display: none; }
+.qrow { display: flex; gap: 10px; align-items: baseline; width: 100%; text-align: left; border: 0; background: none; box-shadow: none;
+  padding: 5px 10px; border-radius: 7px; font: inherit; font-size: 13px; cursor: default; min-width: 0; }
+.qrow:hover { background: rgba(127, 127, 127, 0.14); }
+.qrow.cur { color: var(--accent); font-weight: 600; }
+.qrow:disabled { cursor: default; }
+.qrow .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+.qrow .ext { color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; flex: none; }
+
+.transport { flex: none; display: flex; gap: 10px; align-items: center; margin-top: auto; padding: 10px 16px 14px;
+  background: var(--window-titlebar); box-shadow: 0 -0.5px 0 var(--separator); }
+.mbtn { width: 34px; height: 34px; flex: none; display: grid; place-content: center; border: 0; background: none; box-shadow: none; border-radius: 50%; padding: 0; }
+.mbtn svg { width: 21px; height: 21px; }
+.mbtn:hover { background: rgba(127, 127, 127, 0.15); }
+.mbtn.main { width: 42px; height: 42px; background: var(--accent); color: #fff; }
+.mbtn.main svg { width: 24px; height: 24px; }
+.mbtn.main:hover { background: var(--accent); filter: brightness(1.08); }
+.time { font-size: 11px; font-variant-numeric: tabular-nums; color: var(--text-dim); width: 34px; flex: none; text-align: center; }
+
+input[type='range'] { flex: 1; min-width: 0; accent-color: var(--accent); height: 18px; }
+#scrub { max-width: none; }
+.vchip { width: 17px; height: 17px; flex: none; color: var(--text-dim); }
+#vol { flex: 0 1 90px; min-width: 56px; }

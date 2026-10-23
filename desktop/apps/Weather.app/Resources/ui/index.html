@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><link rel="stylesheet" href="style.css"></head>
+<body>
+<div class="weather">
+  <div class="toolbar" role="search">
+    <input id="search" class="grow" type="search" placeholder="Search cities…" aria-label="Search for a city" autocomplete="off" spellcheck="false">
+    <button id="go" class="primary" aria-label="Search">Search</button>
+  </div>
+  <div id="results" class="results" role="list" aria-label="Search results" hidden></div>
+  <div id="saved" class="saved" role="list" aria-label="Saved locations" hidden></div>
+  <div class="scroll main" role="main" aria-label="Forecast">
+    <div id="empty" class="card hint">
+      <strong>No forecast yet</strong>
+      <span>Search for a city above and choose it in the result list. Forecast from open-meteo.com.</span>
+    </div>
+    <div id="now" class="now" hidden aria-label="Current conditions">
+      <div id="place" class="place trim"></div>
+      <div id="temp" class="temp"></div>
+      <div id="desc" class="desc"></div>
+      <div id="wind" class="wind dim"></div>
+    </div>
+    <ol id="days" class="days" aria-label="Three-day outlook" hidden></ol>
+    <div id="error" class="card error" hidden></div>
+  </div>
+  <div id="status" class="status dim" role="status" aria-live="polite"></div>
+</div>
+<script src="main.js"></script>
+</body>
+</html>

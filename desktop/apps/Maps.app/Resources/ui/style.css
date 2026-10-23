@@ -1,0 +1,46 @@
+.app { display: flex; flex-direction: column; height: 100%; }
+.toolbar { display: flex; align-items: center; gap: 6px; padding: 6px 8px; }
+.grow { flex: 1; }
+.searchwrap { position: relative; display: block; }
+#search { width: 190px; padding: 3px 9px; font-size: 12.5px; }
+
+.suggest { position: absolute; top: calc(100% + 3px); left: 0; min-width: 230px; z-index: 20; padding: 3px; border-radius: 9px; background: var(--window-bg); box-shadow: 0 6px 22px rgba(0,0,0,0.28), 0 0 0 0.5px var(--separator); }
+.suggest[hidden] { display: none; }
+.suggest button { display: block; width: 100%; text-align: left; border: 0; background: none; box-shadow: none; padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.suggest button small { display: block; color: var(--text-dim); font-size: 11px; }
+.suggest button[aria-current] , .suggest button:hover { background: var(--accent); color: #fff; }
+.suggest button[aria-current] small, .suggest button:hover small { color: rgba(255,255,255,0.85); }
+.suggest .none { padding: 5px 9px; color: var(--text-dim); font-size: 12px; }
+
+.mapwrap { position: relative; flex: 1; min-height: 0; overflow: hidden; outline: 0; }
+#map { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; user-select: none; }
+#map.panning { cursor: grabbing; }
+#map:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+
+/* ocean, land and grid keep their chart colors in both themes */
+.ocean { fill: #4d7fb5; }
+.land { fill: #dfdfae; fill-opacity: 0.96; stroke: #b3bc8a; stroke-width: 1; stroke-linejoin: round; }
+.grat { fill: none; stroke: rgba(255,255,255,0.16); stroke-width: 1; shape-rendering: crispEdges; }
+.grat .eq { stroke: rgba(255,255,255,0.34); }
+.grat .label { fill: rgba(255,255,255,0.55); stroke: none; font-size: 9px; font-style: italic; }
+
+.city { cursor: pointer; }
+.city .inner circle { fill: #c0392b; stroke: rgba(255,255,255,0.9); stroke-width: 1; }
+.city.sel .inner circle { fill: var(--accent); stroke: #fff; stroke-width: 1.5; }
+.city .inner text { font-size: 10.5px; fill: #22303a; paint-order: stroke; stroke: rgba(255,255,255,0.85); stroke-width: 2.5px; stroke-linejoin: round; pointer-events: none; user-select: none; }
+.pin { pointer-events: none; }
+.pin path { fill: #e74c3c; stroke: #7d1d12; stroke-width: 0.8; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.35)); }
+.pin circle { fill: #fff; }
+
+.card { position: absolute; left: 10px; bottom: 10px; z-index: 10; padding: 10px 12px; border-radius: 10px; background: var(--window-titlebar); box-shadow: 0 4px 16px rgba(0,0,0,0.3), 0 0 0 0.5px var(--separator); min-width: 190px; }
+.card[hidden] { display: none; }
+.card .crown { display: flex; align-items: center; gap: 6px; }
+.card #cname { font-weight: 600; font-size: 14px; }
+.card .crow { margin-top: 7px; display: flex; }
+.card #cmeta { margin-top: 2px; font-size: 11.5px; user-select: text; }
+
+.toast { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 30; padding: 7px 14px; border-radius: 9px; background: rgba(20,24,28,0.92); color: #fff; font-size: 12.5px; box-shadow: 0 4px 14px rgba(0,0,0,0.35); max-width: 80%; }
+.toast[hidden] { display: none; }
+
+.status { display: flex; gap: 10px; align-items: center; padding: 3px 10px; font-size: 11px; color: var(--text-dim); background: var(--window-titlebar); box-shadow: 0 -0.5px 0 var(--separator); flex: none; }
+.status #scale { font-variant-numeric: tabular-nums; }
