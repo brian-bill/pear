@@ -19,6 +19,12 @@ const CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-i
  * Safari's bridge to `tiny.network` instead (`apps/Safari.app`), under the app's network permission.
  */
 const BROWSER_CSP = "default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' blob: http: https:; style-src 'unsafe-inline' http: https:; img-src data: blob: http: https:; font-src data: http: https:; media-src data: blob: http: https:; connect-src 'none'; worker-src blob: http: https:; frame-src http: https:; form-action 'none'"
+/**
+ * Code builds and previews WebAssembly: `wasm-unsafe-eval` lets the app (and the previews and compiler
+ * worker it hosts, which inherit this policy) instantiate wasm, `worker-src blob:` lets it run its
+ * in-browser compiler as a worker. Still no network and an opaque origin.
+ */
+const CODE_CSP = "default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; worker-src blob:; frame-src 'none'; form-action 'none'"
 const THEME_VARS = [
   '--accent', '--window-bg', '--window-titlebar', '--window-border', '--menu-bg', '--text', '--text-dim', '--separator', '--terminal-bg', '--terminal-fg', '--font', '--mono', '--radius-window',
 ]
@@ -329,7 +335,7 @@ export class AppHost {
     }
     const meta = doc.createElement('meta')
     meta.httpEquiv = 'Content-Security-Policy'
-    meta.content = app.id === 'org.tiny.browser' ? BROWSER_CSP : CSP
+    meta.content = app.id === 'org.tiny.browser' ? BROWSER_CSP : app.id === 'org.tiny.code' ? CODE_CSP : CSP
     const base = doc.createElement('style')
     base.textContent = baseCss
     doc.head.prepend(meta, Object.assign(doc.createElement('meta'), { name: 'color-scheme', content: 'light dark' }))

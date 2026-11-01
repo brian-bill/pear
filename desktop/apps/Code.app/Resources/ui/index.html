@@ -1,0 +1,191 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><link rel="stylesheet" href="monaco.css"><link rel="stylesheet" href="style.css"></head>
+<body>
+<div class="workbench">
+  <!-- title bar: the project in the command center, file actions at the right -->
+  <header class="titlebar">
+    <div class="tb-side"></div>
+    <div class="cmdcenter" title="Project"><span class="cmd-ico" data-icon="search" data-size="14"></span><span id="project" class="projname">No Project</span></div>
+    <div class="tb-side tb-actions">
+      <button id="newproj" class="action" data-icon="new-folder" title="New Project (Cmd+Shift+N)" aria-label="New Project"></button>
+      <button id="openproj" class="action" data-icon="folder-opened" title="Open Project (Cmd+O)" aria-label="Open Project"></button>
+      <button id="save" class="action" data-icon="save" title="Save (Cmd+S)" aria-label="Save" disabled></button>
+    </div>
+  </header>
+
+  <div class="main">
+    <!-- activity bar -->
+    <nav class="activitybar" aria-label="Primary side bar">
+      <button id="tabFiles" class="actitem" aria-pressed="true" title="Explorer (Cmd+0)" aria-label="Explorer" data-icon="files" data-size="24"></button>
+      <button id="tabExt" class="actitem" aria-pressed="false" title="Extensions (Cmd+Shift+X)" aria-label="Extensions" data-icon="extensions" data-size="24"></button>
+      <span class="grow"></span>
+      <button id="themeBtn" class="actitem" title="Color Theme" aria-label="Color Theme" data-icon="settings" data-size="24"></button>
+    </nav>
+
+    <!-- primary side bar -->
+    <aside class="side" id="side">
+      <div class="sideview" id="filesView">
+        <div class="viewtitle"><span>Explorer</span></div>
+        <div class="section">
+          <div class="sechead" id="secHead">
+            <span class="chev" data-icon="chevron-down" data-size="16"></span>
+            <span id="secTitle" class="sectitle">No Project</span>
+            <span class="grow"></span>
+            <span class="secactions">
+              <button id="newfile" class="action" data-icon="new-file" title="New File…" aria-label="New File"></button>
+              <button id="newfolder" class="action" data-icon="new-folder" title="New Folder…" aria-label="New Folder"></button>
+              <button id="refreshTree" class="action" data-icon="refresh" title="Refresh Explorer" aria-label="Refresh Explorer"></button>
+              <button id="collapseTree" class="action" data-icon="collapse-all" title="Collapse Folders in Explorer" aria-label="Collapse Folders"></button>
+            </span>
+          </div>
+          <div id="tree" class="tree" role="tree" aria-label="Project files"></div>
+          <div id="explorerEmpty" class="emptyview">
+            <p>You have not yet opened a project.</p>
+            <button id="emptyOpen" class="vbtn">Open Project</button>
+            <p>Create an app project to start building.</p>
+            <button id="emptyNew" class="vbtn">New Project</button>
+          </div>
+        </div>
+      </div>
+      <div class="sideview" id="extView" hidden>
+        <div class="viewtitle"><span>Extensions</span></div>
+        <div class="searchbox"><input id="extSearch" type="text" placeholder="Search Installed Extensions" aria-label="Search extensions"></div>
+        <div class="sechead static"><span class="chev" data-icon="chevron-down" data-size="16"></span><span class="sectitle">Installed</span><span id="extCount" class="badge"></span></div>
+        <div id="extensions" class="extlist"></div>
+      </div>
+      <div class="sash sash-v" id="sashSide" role="separator" aria-orientation="vertical" aria-label="Resize side bar"></div>
+    </aside>
+
+    <!-- editor group -->
+    <section class="work">
+      <div class="tabbar">
+        <div class="tabs" id="tabs" role="tablist"></div>
+        <div class="tabactions">
+          <button id="sideToggle" class="action" data-icon="split-horizontal" title="Open Preview to the Side" aria-label="Toggle side preview" aria-pressed="true" hidden></button>
+          <span id="extButtons" class="row"></span>
+        </div>
+      </div>
+      <div class="breadcrumbs" id="breadcrumbs" hidden></div>
+      <div class="editors" id="editors">
+        <div id="imageView" class="imageview" hidden>
+          <div class="imagestage" id="imageStage"><img id="imageEl" alt=""></div>
+          <div class="imagebar">
+            <button id="zoomOut" class="action" data-icon="zoom-out" title="Zoom Out" aria-label="Zoom Out"></button>
+            <span id="zoomLabel" class="zoomlabel">Fit</span>
+            <button id="zoomIn" class="action" data-icon="zoom-in" title="Zoom In" aria-label="Zoom In"></button>
+            <button id="zoomFit" class="link small">Fit</button>
+            <button id="zoomActual" class="link small">100%</button>
+          </div>
+        </div>
+        <aside id="sidePreview" class="sidepreview" hidden>
+          <div class="sidehead">
+            <span id="sideTitle">SVG Preview</span>
+            <span class="grow"></span>
+            <select id="merkleChunk" class="modesel" title="Chunk size" aria-label="Merkle chunk size" hidden>
+              <option value="0">Auto chunks</option>
+              <option value="64">64 B chunks</option>
+              <option value="256">256 B chunks</option>
+              <option value="1024">1 KiB chunks</option>
+              <option value="4096">4 KiB chunks</option>
+              <option value="16384">16 KiB chunks</option>
+            </select>
+            <button id="jsonExpand" class="action" data-icon="expand-all" title="Expand All" aria-label="Expand all" hidden></button>
+            <button id="jsonCollapse" class="action" data-icon="collapse-all" title="Collapse All" aria-label="Collapse all" hidden></button>
+            <button id="sideClose" class="action" data-icon="close" title="Close Preview" aria-label="Close preview"></button>
+          </div>
+          <div class="sidebody">
+            <div class="svgstage" id="svgStage"><img id="svgEl" alt="SVG preview"></div>
+            <div class="docview selectable" id="docView" hidden></div>
+            <div id="sideError" class="sideerror" hidden></div>
+          </div>
+        </aside>
+        <div id="welcome" class="welcome">
+          <div class="welcome-inner">
+            <div class="mark" aria-hidden="true">
+              <svg viewBox="0 0 64 64" width="72" height="72"><g fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><path d="M24 20 12 32l12 12"/><path d="M40 20l12 12-12 12"/><path d="M35 14 29 50" opacity=".55"/></g></svg>
+            </div>
+            <h1>Code</h1>
+            <p class="subtitle">Build Pear apps, in Pear</p>
+            <div class="start" id="welcomeStart">
+              <h2>Start</h2>
+              <button id="welcomeNew" class="link"><span data-icon="new-folder"></span>New Project…</button>
+              <button id="welcomeOpen" class="link"><span data-icon="folder-opened"></span>Open Project…</button>
+              <p class="hint">A project is an ordinary <code>.app</code> bundle of HTML, CSS, JavaScript and WebAssembly. Preview it live as you type.</p>
+            </div>
+            <table class="shortcuts">
+              <tr><td>New Project</td><td><kbd>⇧</kbd><kbd>⌘</kbd><kbd>N</kbd></td></tr>
+              <tr><td>Open Project</td><td><kbd>⌘</kbd><kbd>O</kbd></td></tr>
+              <tr><td>Save</td><td><kbd>⌘</kbd><kbd>S</kbd></td></tr>
+              <tr><td>Preview</td><td><kbd>⌘</kbd><kbd>R</kbd></td></tr>
+              <tr><td>Build</td><td><kbd>⇧</kbd><kbd>⌘</kbd><kbd>B</kbd></td></tr>
+              <tr><td>Command Palette</td><td><kbd>F1</kbd></td></tr>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div id="output" class="panel" hidden>
+        <div class="sash sash-h" id="sashOutput" role="separator" aria-orientation="horizontal" aria-label="Resize panel"></div>
+        <div class="panelhead">
+          <div class="paneltabs" role="tablist">
+            <button class="paneltab" id="panelTabProblems" role="tab" aria-selected="false">Problems<span id="problemsBadge" class="badge" hidden></span></button>
+            <button class="paneltab" id="panelTabOutput" role="tab" aria-selected="true">Output</button>
+            <button class="paneltab" id="panelTabConsole" role="tab" aria-selected="false">Debug Console<span id="consoleBadge" class="badge err" hidden></span></button>
+          </div>
+          <span class="grow"></span>
+          <select id="consoleFilter" class="modesel" aria-label="Filter console messages" hidden>
+            <option value="all">All levels</option>
+            <option value="error">Errors</option>
+            <option value="warn">Warnings</option>
+            <option value="log">Logs</option>
+          </select>
+          <button id="outclear" class="action" data-icon="clear-all" title="Clear Output" aria-label="Clear Output"></button>
+          <button id="outclose" class="action" data-icon="close" title="Close Panel" aria-label="Hide output"></button>
+        </div>
+        <pre id="outlog" class="selectable" aria-live="polite"></pre>
+        <div id="problemsList" class="problems" role="list" hidden></div>
+        <div id="consoleView" class="consoleview" hidden>
+          <div id="consoleLog" class="consolelog selectable" role="log" aria-live="polite"></div>
+          <label class="consoleprompt"><span data-icon="chevron-right" data-size="14" aria-hidden="true"></span><input id="consoleInput" type="text" spellcheck="false" autocomplete="off" placeholder="Evaluate in the running app (Enter to run, ↑ for history)" aria-label="Evaluate expression in the previewed app"></label>
+        </div>
+      </div>
+    </section>
+
+    <!-- preview: a second editor group -->
+    <aside id="previewPane" class="preview" hidden>
+      <div class="sash sash-v sash-left" id="sashPreview" role="separator" aria-orientation="vertical" aria-label="Resize preview"></div>
+      <div class="prevhead">
+        <span class="previcon" data-icon="eye" data-size="14"></span>
+        <span id="prevTitle" class="prevtitle">Preview</span>
+        <span class="grow"></span>
+        <span id="prevStamp" class="stamp" title="Last rebuild"></span>
+        <select id="prevMode" class="modesel" title="When the preview rebuilds" aria-label="Preview rebuild mode">
+          <option value="type">Live: on type</option>
+          <option value="save">Live: on save</option>
+          <option value="manual">Manual</option>
+        </select>
+        <button id="prevReload" class="action" data-icon="refresh" title="Reload preview (Cmd+R)" aria-label="Reload preview"></button>
+        <button id="prevClose" class="action" data-icon="close" title="Hide preview" aria-label="Hide preview"></button>
+      </div>
+      <iframe id="prevFrame" class="prevframe" title="Preview" sandbox="allow-scripts allow-forms"></iframe>
+    </aside>
+  </div>
+
+  <footer class="statusbar">
+    <div class="st-group">
+      <button id="stConsole" class="stitem stbtn" title="Debug Console (Cmd+Shift+Y)" aria-label="Debug Console" data-icon="terminal-cmd" data-size="14"></button>
+      <button id="stProblems" class="stitem stbtn" title="Problems (Cmd+Shift+M)" aria-label="Problems"></button>
+      <span id="stState" class="stitem"></span>
+    </div>
+    <div class="st-group">
+      <button id="stAuto" class="stitem stbtn" aria-label="Auto Save"></button>
+      <span id="stPos" class="stitem"></span>
+      <span id="stIndent" class="stitem" hidden>Spaces: 2</span>
+      <span id="stEnc" class="stitem" hidden>UTF-8</span>
+      <span id="stLang" class="stitem"></span>
+    </div>
+  </footer>
+</div>
+<script src="main.js"></script>
+</body>
+</html>

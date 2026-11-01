@@ -1,0 +1,19 @@
+{
+  "id": "org.tiny.code",
+  "name": "Code",
+  "version": "1.0.0",
+  "kind": "app",
+  "icon": "Resources/icon.svg",
+  "ui": "Resources/ui/index.html",
+  "window": {
+    "width": 1160,
+    "height": 720,
+    "minWidth": 680,
+    "minHeight": 420
+  },
+  "permissions": [
+    "fs.user",
+    "clipboard"
+  ],
+  "minify": true
+}

@@ -58,13 +58,14 @@ export class AppRegistry {
     for (const app of bundled) {
       const have = installed.get(app.id)
       try {
-        if (!have) await this.kernel.bundleInstall({ files: app.files }, { location: '/Applications', grant: true })
+        const files = await resolveFiles(app.files)
+        if (!have) await this.kernel.bundleInstall({ files }, { location: '/Applications', grant: true })
         else {
           const build = await this.kernel.readFile(`${have.path}/.build`).then((b) => dec.decode(b), () => '')
           if (build !== app.build) {
-            await this.kernel.bundleUpdate(app.id, { files: app.files })
+            await this.kernel.bundleUpdate(app.id, { files })
             // an update may declare more permissions than before
-            for (const p of (JSON.parse(app.files['manifest.json']!).permissions ?? []) as string[]) await this.kernel.permGrant(app.id, p as never).catch(() => {})
+            for (const p of (JSON.parse(files['manifest.json'] as string).permissions ?? []) as string[]) await this.kernel.permGrant(app.id, p as never).catch(() => {})
           }
         }
       } catch (e) {
@@ -73,4 +74,19 @@ export class AppRegistry {
     }
     await this.refresh()
   }
+}
+
+/**
+ * Bundle files above ~2 MB are not embedded in the build; they are served from `/app-assets/` and
+ * fetched here (same origin, once per boot), so they land in the VFS like any other bundle file.
+ */
+async function resolveFiles(files: Record<string, string>): Promise<Record<string, string | Uint8Array>> {
+  const out: Record<string, string | Uint8Array> = {}
+  await Promise.all(
+    Object.entries(files).map(async ([k, v]) => {
+      const m = /^__url:(.+)$/.exec(v)
+      out[k] = m ? await fetch(m[1]!).then((r) => r.text()) : v
+    }),
+  )
+  return out
 }

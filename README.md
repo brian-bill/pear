@@ -79,7 +79,7 @@ Desktop is a client of Vanilla. It never touches OPFS or LocalStorage directly; 
 - **Dock** with pinned apps, running indicators, magnification, and a Trash
 - **Finder-like file browser** over the VFS
 - **Spotlight-style launcher** (`Alt+Space`) for apps, files, settings and quick calculations
-- **Bundled apps**: Finder, Terminal, TextEdit, Notes, Safari, Music, QuickTime Player, Preview, Maps, Reminders, Clock, Calculator, Settings, Activity Monitor, Console, Weather, Stocks, News, Books, Freeform, Voice Memos and more
+- **Bundled apps**: Finder, Terminal, TextEdit, Notes, Safari, Music, QuickTime Player, Preview, Maps, Reminders, Clock, Calculator, Settings, Activity Monitor, Console, Code, Weather, Stocks, News, Books, Freeform, Voice Memos and more
 
 See [`desktop/README.md`](./desktop/README.md) for details.
 

@@ -82,6 +82,25 @@ A small API that wraps Vanilla syscalls for UI work:
 
 Bundled apps use the same SDK that third-party apps would.
 
+### Code — authoring apps on the client
+
+**Code** (`apps/Code.app`) writes Pear apps *in* Pear: it edits project folders — ordinary
+`.app` bundles under `~/Projects` — with the Monaco editor, and runs them in a live preview.
+Two extensions ship with it, both client-side with no toolchain involved:
+
+- **Preview** (installed by default) renders the project the way Desktop serves real windows:
+  styles, scripts and images inlined into one sandboxed document. The previewed app gets the
+  SDK's `tiny` API through a shim, served by Code with Code's own permissions. Saving (with
+  Live on) rebuilds it.
+- **AssemblyScript** compiles `src/main.ts` to WebAssembly entirely in the browser — the
+  compiler is a generated file inside the bundle (`Resources/ui/asc.js`, 15 MB, read on demand;
+  apps may read their own bundle) run as a worker. The previewed app loads `src/main.wasm`.
+
+Regenerate the compiler bundle after upgrading `assemblyscript`: run
+`node apps/Code.app/tools/generate.mjs` from `desktop/`. Code's window CSP (see
+`src/apphost.ts`) additionally allows `wasm-unsafe-eval` and `worker-src blob:` so builds and
+previews can run WebAssembly; it still has no network access.
+
 ## Theming
 
 - Light and dark appearance, following the system preference by default.

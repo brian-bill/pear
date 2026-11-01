@@ -2,6 +2,9 @@
 
 How to write an app for Pear. The apps that ship with Pear (Finder, Terminal, Text Editor, Settings...) are built exactly this way.
 
+> Apps can also be authored *on the client* with the bundled **Code** app — it edits and previews
+> app projects and compiles AssemblyScript to WebAssembly in the browser. See `desktop/README.md`.
+
 ## What an app is
 
 An app is a Vanilla **bundle** (`Name.app/`, see `contracts/app-bundles.md`) with a window UI:
