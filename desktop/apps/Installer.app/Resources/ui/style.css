@@ -1,0 +1,22 @@
+.installer { height: 100%; display: flex; flex-direction: column; }
+.view { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 18px 20px 14px; gap: 12px; overflow: auto; }
+.head { display: flex; gap: 14px; align-items: center; }
+.head h1 { margin: 0; font-size: 18px; font-weight: 600; }
+.head .tile { width: 56px; height: 56px; border-radius: 13px; background: var(--accent); color: #fff; display: grid; place-items: center; font-size: 26px; flex: none; }
+.head small { display: block; color: var(--text-dim); }
+.badge { display: inline-block; padding: 1px 7px; border-radius: 9px; font-size: 11px; background: rgba(127,127,127,0.22); }
+.badge.warn { background: rgba(255,159,10,0.25); color: #b36b00; }
+:root[data-theme='dark'] .badge.warn { color: #ffb340; }
+.badge.ok { background: rgba(48,209,88,0.22); color: #1d8a3a; }
+:root[data-theme='dark'] .badge.ok { color: #5ee08a; }
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0; }
+.facts dt { color: var(--text-dim); }
+.facts dd { margin: 0; word-break: break-all; user-select: text; }
+.card h2 { margin: 0 0 6px; font-size: 12px; font-weight: 600; }
+.card ul { margin: 0; padding-left: 18px; }
+.card li { margin: 2px 0; }
+.note { color: var(--text-dim); }
+.error { color: #ff453a; }
+.spacer { flex: 1; }
+.actions { display: flex; gap: 8px; justify-content: flex-end; padding-top: 4px; }
+.center { margin: auto; text-align: center; max-width: 320px; }

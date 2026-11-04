@@ -1,0 +1,7 @@
+{
+  "protocol": 1,
+  "id": "org.tiny.apps",
+  "name": "Pear Apps",
+  "description": "The apps this Pear deployment ships as its own source.",
+  "capabilities": ["index"]
+}

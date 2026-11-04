@@ -2,6 +2,7 @@
 /// restores the session. Desktop talks to Vanilla only through the kernel client and the system services.
 import type { Kernel } from '../../vanilla/kernel/src/client'
 import * as transfer from '../../vanilla/kernel/src/host-transfer'
+import type { Intent } from '../../vanilla/kernel/src/intents'
 import { AppHost } from './apphost'
 import { AppRegistry } from './apps/registry'
 import { Dock, type DockSettings } from './shell/dock'
@@ -23,6 +24,7 @@ export const APP = {
   profile: 'org.tiny.profile',
   settings: 'org.tiny.settings',
   editor: 'org.tiny.textedit',
+  installer: 'org.tiny.installer',
 }
 const DEFAULT_DOCK = [APP.profile, APP.finder, APP.terminal, APP.editor, APP.settings]
 
@@ -151,6 +153,8 @@ export class Desktop {
     void this.watchFiles()
     matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => void apply())
     k.onEvent((e) => {
+      // an app was installed, updated or removed: the Dock, Launchpad and launcher show what is there now
+      if (e.type === 'bundle') void this.registry.refresh()
       if (e.type === 'config' && e.event === 'changed' && (e.change.domain === 'tiny.system' || e.change.domain.startsWith('tiny.desktop.'))) void apply()
     })
   }
@@ -173,6 +177,20 @@ export class Desktop {
   private async setDock(s: Partial<DockSettings>): Promise<void> {
     for (const [key, value] of Object.entries(s)) await this.kernel.configSet('tiny.desktop.dock', key, value)
     await this.kernel.configFlush()
+  }
+
+  // ---- install links (`?install=`, `?addSource=`)
+
+  /**
+   * Act on the intents the page was opened with, once the session is back. Each one only opens a window that asks: the
+   * Installer shows the manifest and permissions first, Settings shows the source. A link that was refused is said so.
+   */
+  handleIntents(intents: Intent[]): void {
+    for (const i of intents) {
+      if (i.kind === 'installUrl') void this.apps.launch(APP.installer, { args: [`install:${i.source}`] })
+      else if (i.kind === 'addSource') void this.apps.launch(APP.settings, { args: ['pane:apps', `add-source:${i.url}`] })
+      else this.notify('A link was not followed', `The ${i.param === 'install' ? 'install' : 'source'} link was refused: ${i.reason}.`)
+    }
   }
 
   // ---- opening things

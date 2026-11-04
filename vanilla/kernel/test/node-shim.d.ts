@@ -9,3 +9,18 @@ declare module 'node:fs/promises' {
     length: number
   }
 }
+
+// Enough of node:crypto for tests that serve signed or hashed fixtures.
+declare module 'node:crypto' {
+  interface KeyObject {
+    export(options: { format: 'jwk' }): { x?: string }
+  }
+  export function createHash(algorithm: string): { update(data: string | Buffer): { digest(encoding: 'hex'): string } }
+  export function generateKeyPairSync(type: 'ed25519'): { publicKey: KeyObject; privateKey: KeyObject }
+  export function sign(algorithm: null, data: Buffer, key: KeyObject): Buffer
+}
+declare class Buffer {
+  length: number
+  static from(data: string | number[], encoding?: string): Buffer
+  toString(encoding?: string): string
+}

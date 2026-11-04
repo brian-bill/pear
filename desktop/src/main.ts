@@ -68,6 +68,25 @@ function notice(title: string, text: string, buttons: Array<{ label: string; run
   return el
 }
 
+/**
+ * The built-in app sources of this deployment (`contracts/app-registry.md`). By default the registry this site serves
+ * itself at `/registry/`; a deployment points elsewhere with `VITE_NATIVE_SOURCES` (JSON `[{id, name, url}]`, `[]` for
+ * none). Written to the system scope each boot so a changed build takes effect; the user can turn these off, not delete them.
+ */
+async function setNativeSources(kernel: ReturnType<typeof createKernel>): Promise<void> {
+  let list: Array<{ id: string; name: string; url: string }> = [{ id: 'native', name: 'Pear Apps', url: '/registry' }]
+  const configured = (import.meta as unknown as { env: Record<string, string | undefined> }).env.VITE_NATIVE_SOURCES
+  if (configured) {
+    try {
+      list = JSON.parse(configured)
+    } catch {
+      console.warn('VITE_NATIVE_SOURCES is not valid JSON; using the default source')
+    }
+  }
+  const native = list.map((s) => ({ id: String(s.id), name: String(s.name), url: new URL(s.url, location.origin).href.replace(/\/+$/, '') }))
+  await kernel.configSet('tiny.apps.sources', 'native', native, { scope: 'system' })
+}
+
 async function boot(): Promise<void> {
   progress('Starting', 0.05)
   const worker = new Worker('/os/worker.js', { type: 'module' })
@@ -75,9 +94,13 @@ async function boot(): Promise<void> {
   kernel.onEvent((e) => {
     if (e.type === 'system' && e.event === 'progress') progress(e.stage, e.fraction)
   })
+  // `?install=` and `?addSource=`: read now, taken out of the address so a reload does not ask again, acted on after the session is back
+  const intents = kernel.intents()
+  kernel.clearIntents()
   running = { shutdown: async () => (await kernel.shutdown().catch(() => {}), worker.terminate()) }
   await kernel.boot({ namespace, system: { safeMode: params.has('safe'), lastExitClean: exitedCleanly() } })
   attachDrivers(kernel, { capture: false })
+  await setNativeSources(kernel).catch((e) => console.warn('could not set the native app sources', e))
 
   const desktop = new Desktop(kernel, root)
   window.tiny = desktop
@@ -103,6 +126,7 @@ async function boot(): Promise<void> {
     if (restore && session?.state) await desktop.restore(session.state)
     else if (info.firstBoot) await desktop.firstRun()
     await kernel.lookup('tiny.session').then((port) => kernel.request(port, { op: 'login' }, { timeout: 8000 })).catch(() => {})
+    desktop.handleIntents(intents)
   }
   bootEl.classList.add('done')
   setTimeout(() => bootEl.remove(), 500)

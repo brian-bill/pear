@@ -282,6 +282,10 @@ const host = {
   importFiles: (dest: string, o: { directory?: boolean } = {}) => call<string[]>('host.import', dest, o),
   /** Download a file (or a folder, as a zip) to the real computer. */
   exportPath: (path: string, o: { saveAs?: boolean } = {}) => call<void>('host.export', path, o),
+  /** The address this Pear is served from, for building an install link (`<origin>?install=<package URL>`). */
+  origin: () => call<string>('host.origin'),
+  /** Source of the standard app process (`main.js`) that UI apps run as, to put in a package of a project that has none. */
+  runtime: () => call<string>('host.runtime'),
 }
 
 const shell = {

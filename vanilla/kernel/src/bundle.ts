@@ -42,7 +42,7 @@ interface WindowHints {
 }
 
 /** The validated `manifest.json`. */
-interface Manifest {
+export interface Manifest {
   id: string
   name: string
   version: string
@@ -97,7 +97,7 @@ const VERSION = /^\d+(\.\d+){0,2}([-+][0-9A-Za-z.-]+)?$/
 const EXTENSION = /^[A-Za-z0-9_+-]{1,16}$/
 const SCHEME = /^[a-z][a-z0-9+.-]*$/
 const RESERVED_SCHEMES = new Set(['file', 'javascript', 'data', 'blob', 'about', 'vbscript'])
-const MAX_BUNDLE_FILES = 5000
+export const MAX_BUNDLE_FILES = 5000
 const enc = new TextEncoder()
 const dec = new TextDecoder()
 
@@ -122,7 +122,7 @@ const extensions = (v: unknown, what: string): string[] => {
 const majorOf = (v: string) => parseInt(v, 10)
 
 /** Check `manifest.json` content. Does not look at the files it names. */
-function parseManifest(text: string): Manifest {
+export function parseManifest(text: string): Manifest {
   let raw: Record<string, unknown>
   try {
     raw = JSON.parse(text)
@@ -222,7 +222,7 @@ export async function sha256(data: Uint8Array): Promise<string> {
   return [...digest].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
-const dirName = (name: string) => `${name.replace(/[\\:*?"<>|\0]/g, '-')}.app`
+export const dirName = (name: string) => `${name.replace(/[\\:*?"<>|\0]/g, '-')}.app`
 const join = (a: string, b: string) => (a === '/' ? `/${b}` : `${a}/${b}`)
 
 interface BundleHooks {

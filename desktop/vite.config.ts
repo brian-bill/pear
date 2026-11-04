@@ -127,6 +127,7 @@ function bundledApps(): Plugin {
       if (id !== `\0${VIRTUAL}`) return null
       const apps: unknown[] = []
       const hostSource = await compile(join(SDK_DIR, 'host.ts'), 'esm')
+      const clientSource = await compile(join(SDK_DIR, 'global.ts'), 'iife')
       for (const dir of existsSync(APPS_DIR) ? readdirSync(APPS_DIR).filter((n) => n.endsWith('.app')) : []) {
         const root = join(APPS_DIR, dir)
         try {
@@ -167,7 +168,7 @@ function bundledApps(): Plugin {
           this.warn(`${dir} was left out: ${(e as Error).message.split('\n')[0]}`)
         }
       }
-      return `export default ${JSON.stringify(apps)}`
+      return `export default ${JSON.stringify(apps)}\nexport const hostSource = ${JSON.stringify(hostSource)}\nexport const clientSource = ${JSON.stringify(clientSource)}`
     },
     handleHotUpdate({ file, server }) {
       if (file.startsWith(APPS_DIR) || file.startsWith(SDK_DIR)) {

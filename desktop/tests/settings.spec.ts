@@ -211,3 +211,93 @@ test('changes made elsewhere show up when the window gains focus again', async (
   await expect(desktop.win('System Settings')).toHaveClass(/focused/)
   await expect(f.getByRole('button', { name: 'Dark', exact: true })).toHaveAttribute('aria-pressed', 'true')
 })
+
+// ---- app sources (contracts/app-registry.md)
+
+/** A registry on https://apps.acme.test whose one app is served as a directory with hashes. */
+async function acmeRegistry(page: Desktop['page'], version = '1.0.0') {
+  const { createHash } = await import('node:crypto')
+  const sha = (s: string) => createHash('sha256').update(s).digest('hex')
+  const main = `export default async () => { /* ${version} */ }`
+  const manifest = JSON.stringify({ id: 'com.acme.notes', name: 'Acme Notes', version, kind: 'app', entry: 'main.js', permissions: [], hashes: { 'main.js': sha(main) } })
+  const base = 'https://apps.acme.test'
+  const listing = { id: 'com.acme.notes', name: 'Acme Notes', summary: 'Take notes', version, publisher: { name: 'Acme' }, categories: [], size: 1, updated: '2026-11-01' }
+  const files: Record<string, string> = {
+    '/.well-known/pear-registry.json': JSON.stringify({ protocol: 1, id: 'org.acme.apps', name: 'Acme Apps', description: 'Apps by Acme', capabilities: ['index'] }),
+    '/index.json': JSON.stringify({ apps: [listing] }),
+    '/apps/com.acme.notes/app.json': JSON.stringify({ ...listing, description: 'Notes', screenshots: [], versions: [{ version, created: '2026-11-01', artifact: { kind: 'directory', url: `${base}/apps/com.acme.notes/${version}`, sha256: sha(manifest), size: 1 }, manifest: { permissions: [] } }] }),
+    [`/apps/com.acme.notes/${version}/manifest.json`]: manifest,
+    [`/apps/com.acme.notes/${version}/main.js`]: main,
+  }
+  await page.unroute('https://apps.acme.test/**').catch(() => {})
+  await page.route('https://apps.acme.test/**', (route) => {
+    const body = files[new URL(route.request().url()).pathname]
+    const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-expose-headers': '*' }
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors })
+    return body === undefined ? route.fulfill({ status: 404, headers: cors, body: 'no' }) : route.fulfill({ status: 200, headers: { ...cors, 'content-type': 'application/json' }, body })
+  })
+}
+
+test('app sources: the built-in source is listed and cannot be removed; a user source is added after review, used to install, and updated', async ({ desktop }) => {
+  const { page } = desktop
+  await acmeRegistry(page)
+  const f = await openSettings(desktop)
+  await pane(f, 'Apps')
+
+  // the built-in source comes with the deployment
+  const native = f.locator('#sources .line[data-source="native"]')
+  await expect(native).toContainText('Pear Apps')
+  await expect(native).toContainText('Built-in')
+  await expect(native.getByRole('button', { name: /Remove/ })).toHaveCount(0)
+
+  // add: the address is checked and shown before anything is saved
+  await f.getByRole('button', { name: 'Add Source…' }).click()
+  await page.locator('.sheet input[type="text"]').fill('apps.acme.test')
+  await page.locator('.sheet button.primary').click()
+  await expect(page.locator('.sheet')).toContainText('Add “Acme Apps” as a source?')
+  await expect(page.locator('.sheet')).toContainText('Not signed')
+  await expect(page.locator('.sheet')).toContainText('You review each app before it installs')
+  expect(await page.evaluate(() => window.tiny!.kernel.configGet('tiny.apps.sources', 'added'))).toEqual([])
+  await page.locator('.sheet button.primary').click()
+  const acme = f.locator('#sources .line[data-source="acme-apps"]')
+  await expect(acme).toContainText('Added by you')
+  await expect(acme).toContainText('Online')
+
+  // install: the prompt names the source and what the app can ask for
+  await f.getByRole('button', { name: 'Install Acme Notes from Acme Apps' }).click()
+  await expect(page.locator('.sheet')).toContainText('Install “Acme Notes”?')
+  await expect(page.locator('.sheet')).toContainText('apps.acme.test')
+  await expect(page.locator('.sheet')).toContainText('added by you')
+  await page.locator('.sheet button.primary').click()
+  await expect(f.locator('.line[data-app="com.acme.notes"]')).toContainText('from Acme Apps')
+
+  // update from the same source
+  await acmeRegistry(page, '1.1.0')
+  await f.getByRole('button', { name: 'Check for Updates' }).click()
+  await expect(f.locator('[data-update="com.acme.notes"]')).toContainText('1.0.0 → 1.1.0')
+  await f.getByRole('button', { name: 'Update Acme Notes' }).click()
+  await page.locator('.sheet button.primary').click()
+  await expect(f.locator('.line[data-app="com.acme.notes"]')).toContainText('version 1.1.0')
+
+  // a source can be turned off (it leaves search) and removed (installed apps stay)
+  await f.getByLabel('Use Acme Apps').uncheck()
+  await expect.poll(async () => (await page.evaluate(() => window.tiny!.kernel.configGet('tiny.apps.sources', 'added')) as Array<{ enabled: boolean }>)[0]?.enabled).toBe(false)
+  await f.getByRole('button', { name: 'Remove Acme Apps' }).click()
+  await page.locator('.sheet button.danger').click()
+  await expect(acme).toHaveCount(0)
+  await expect(f.locator('.line[data-app="com.acme.notes"]')).toBeVisible()
+})
+
+test('app sources: a plain-http address and a page that is not a registry are refused with a reason', async ({ desktop }) => {
+  const { page } = desktop
+  const f = await openSettings(desktop)
+  await pane(f, 'Apps')
+  for (const [address, reason] of [['http://apps.acme.test', 'https'], ['example.invalid', '']] as const) {
+    await f.getByRole('button', { name: 'Add Source…' }).click()
+    await page.locator('.sheet input[type="text"]').fill(address)
+    await page.locator('.sheet button.primary').click()
+    await expect(f.locator('.status')).toHaveClass(/error/)
+    if (reason) await expect(f.locator('.status')).toContainText(reason)
+  }
+  expect(await page.evaluate(() => window.tiny!.kernel.configGet('tiny.apps.sources', 'added'))).toEqual([])
+})

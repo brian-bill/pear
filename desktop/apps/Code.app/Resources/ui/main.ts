@@ -8,6 +8,7 @@ import { fileIcon, icon, languageName, type IconName } from './icons'
 import { AUTO, THEMES, applyTheme, currentPalette, themeChoice } from './themes'
 import type { ExtActions, ExtHost, ExtensionDef, ToolbarButton } from './extension'
 import * as debugConsole from './debugconsole'
+import * as share from './share'
 import { KIND_LABEL, defaultKind, jsonToggleAll, render as renderPreview, type PreviewKind } from './previews'
 import { previewExtension, togglePreview } from './preview'
 import { TEMPLATES, instantiate, type TemplateDef } from './templates'
@@ -1094,8 +1095,14 @@ function setMenus(): void {
     },
     {
       title: 'Actions',
-      items: [{ label: 'Build (AssemblyScript)', shortcut: 'Cmd+Shift+B', action: buildShortcut, disabled: !project }],
-    },
+      items: [
+        { label: 'Build', shortcut: 'Cmd+Shift+B', action: buildShortcut, disabled: !project, },
+        { label: 'Package & Install', action: () => void share.packageAndInstall(project!), disabled: !project },
+        { label: 'Download .pearapp', action: () => void share.downloadPackage(project!), disabled: !project },
+        { separator: true },
+        { label: 'Check Project…', action: () => void share.checkProject(project!), disabled: !project },
+      ],
+    }
   ])
 }
 
@@ -1268,7 +1275,7 @@ void (async () => {
 
   tiny.app.onSaveState(() => ({ project }))
 
-  ;(window as unknown as Record<string, unknown>).__main = true
+    ; (window as unknown as Record<string, unknown>).__main = true
   setMenus()
   // opened with a path (dragged onto the dock, say) or the last project
   const argPath = tiny.app.args.find((a) => typeof a === 'string' && a.startsWith('/'))

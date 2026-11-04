@@ -1,0 +1,217 @@
+import { basename, formatBytes, tiny } from '@tiny/sdk'
+
+/// The one place an app is reviewed before it installs (`contracts/app-distribution.md`): a package opened from a file,
+/// a link (`?install=`), or Code's "Package & Install". The kernel has already checked the checksum and every file's
+/// hash by the time this shows anything; what is left for the person is whether they trust it and what it can reach.
+
+interface Manifest {
+  id: string
+  name: string
+  version: string
+  permissions: string[]
+  documentTypes?: Array<{ ext: string[] }>
+  urlSchemes?: string[]
+}
+interface Archive {
+  ok: boolean
+  error?: string
+  size: number
+  digest: string
+  manifest?: Manifest
+  files: number
+  bytes: number
+  created?: string
+  generator?: string
+}
+interface Review {
+  /** Where it came from, as shown. */
+  from: string
+  manifest: Manifest
+  files: number
+  bytes: number
+  /** What was checked, in words. */
+  verified: string
+  installed: { version: string } | null
+  install(update: boolean): Promise<{ id: string; name: string }>
+}
+
+const kernel = <T,>(m: string, ...a: unknown[]) => tiny.admin.kernel<T>(m, ...a)
+const view = document.getElementById('view')!
+let token = 0
+
+const WHAT: Record<string, string> = {
+  'fs.container': 'Keep its own files',
+  'fs.user': 'Read and change your files in Documents, Downloads, Desktop and other folders of yours',
+  'fs.picker': 'Open files you choose',
+  'fs.all': 'Read and change every file on this computer',
+  clipboard: 'Use the clipboard',
+  notifications: 'Show notifications',
+  'audio.input': 'Use the microphone',
+  'video.input': 'Use the camera',
+  network: 'Connect to the internet',
+  location: 'Know your location',
+  'process.spawn': 'Start other programs',
+  'display.capture': 'Record the screen',
+}
+const SEVERE = new Set(['fs.all', 'process.spawn', 'display.capture'])
+
+function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, unknown> | null, ...kids: Array<Node | string | null | false>): HTMLElementTagNameMap[K] {
+  const e = document.createElement(tag)
+  for (const [k, v] of Object.entries(props ?? {})) {
+    if (v === undefined || v === null || v === false) continue
+    if (k.startsWith('on') && typeof v === 'function') e.addEventListener(k.slice(2).toLowerCase(), v as EventListener)
+    else if (k === 'class') e.className = String(v)
+    else e.setAttribute(k, v === true ? '' : String(v))
+  }
+  for (const c of kids) if (c) e.append(c)
+  return e
+}
+
+const compare = (a: string, b: string): number => {
+  const pa = a.split(/[-+]/)[0]!.split('.').map(Number)
+  const pb = b.split(/[-+]/)[0]!.split('.').map(Number)
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) < (pb[i] ?? 0) ? -1 : 1
+  return 0
+}
+
+function show(...nodes: Array<Node | null>): void {
+  view.replaceChildren(...(nodes.filter(Boolean) as Node[]))
+}
+
+const busy = (msg: string) => show(el('div', { class: 'center' }, el('p', null, msg)))
+const problem = (title: string, detail: string) =>
+  show(el('div', { class: 'center' }, el('h1', null, title), el('p', { class: 'error', role: 'alert' }, detail), el('div', { class: 'actions' }, el('button', { onclick: () => tiny.window.close() }, 'Close'))))
+
+async function installedVersion(id: string): Promise<{ version: string } | null> {
+  try {
+    return await kernel<{ version: string }>('bundleInfo', id)
+  } catch {
+    return null
+  }
+}
+
+function review(r: Review): void {
+  const m = r.manifest
+  const update = Boolean(r.installed)
+  const downgrade = r.installed ? compare(m.version, r.installed.version) < 0 : false
+  const reach: Array<[string, boolean]> = [
+    ...m.permissions.map((p) => [WHAT[p] ?? p, SEVERE.has(p)] as [string, boolean]),
+    ...((m.documentTypes ?? []).flatMap((d) => d.ext).length ? [[`Open ${[...new Set((m.documentTypes ?? []).flatMap((d) => d.ext))].map((e) => `.${e}`).join(', ')} files`, false] as [string, boolean]] : []),
+    ...(m.urlSchemes ?? []).map((s) => [`Open ${s}: links`, false] as [string, boolean]),
+  ]
+  const go = el('button', { class: 'primary', id: 'go' }, update ? (downgrade ? 'Replace with Older Version' : 'Update') : 'Install')
+  const cancel = el('button', { onclick: () => tiny.window.close() }, 'Cancel')
+  go.addEventListener('click', async () => {
+    go.setAttribute('disabled', '')
+    cancel.setAttribute('disabled', '')
+    busy(`${update ? 'Updating' : 'Installing'} ${m.name}…`)
+    try {
+      const app = await r.install(update)
+      done(app.id, app.name, update)
+    } catch (e) {
+      const err = e as { code?: string; message?: string }
+      problem(`${m.name} was not installed`, `${err.message ?? 'Something went wrong.'}${err.code ? ` (${err.code})` : ''}`)
+    }
+  })
+  show(
+    el('div', { class: 'head' }, el('div', { class: 'tile', 'aria-hidden': 'true' }, m.name.slice(0, 1).toUpperCase()),
+      el('div', null, el('h1', null, m.name), el('small', null, `Version ${m.version} · ${m.id}`))),
+    el('div', null,
+      el('span', { class: 'badge warn' }, 'No verified publisher'), ' ',
+      el('span', { class: 'badge ok' }, 'Contents verified')),
+    el('dl', { class: 'facts' },
+      el('dt', null, 'From'), el('dd', null, r.from),
+      el('dt', null, 'Size'), el('dd', null, `${formatBytes(r.bytes)} in ${r.files} file${r.files === 1 ? '' : 's'}`),
+      el('dt', null, 'Checked'), el('dd', null, r.verified),
+      r.installed ? el('dt', null, 'On this computer') : null, r.installed ? el('dd', null, `Version ${r.installed.version}${downgrade ? ' (newer than this package)' : ''}`) : null),
+    el('div', { class: 'card' }, el('h2', null, 'This app can'),
+      reach.length ? el('ul', null, ...reach.map(([text, severe]) => el('li', severe ? { class: 'error' } : null, text))) : el('p', { class: 'note' }, 'Ask for no special access.')),
+    el('p', { class: 'note' }, 'It runs inside Pear’s sandbox and asks again for anything it needs later. Only install apps from people you trust.'),
+    el('div', { class: 'spacer' }),
+    el('div', { class: 'actions' }, cancel, go),
+  )
+  go.focus()
+}
+
+function done(id: string, name: string, updated: boolean): void {
+  show(
+    el('div', { class: 'center' }, el('div', { class: 'tile', style: 'margin:0 auto 12px' }, '✓'),
+      el('h1', null, `${name} was ${updated ? 'updated' : 'installed'}`),
+      el('p', { class: 'note' }, 'You can find it in the Launchpad.'),
+      el('div', { class: 'actions', style: 'justify-content:center' },
+        el('button', { onclick: () => tiny.window.close() }, 'Done'),
+        el('button', { class: 'primary', id: 'open', onclick: () => void tiny.shell.openApp(id).then(() => tiny.window.close()) }, 'Open'))),
+  )
+}
+
+// ---- sources
+
+async function fromFile(path: string): Promise<Review> {
+  const blob = new Blob([(await tiny.readFile(path)) as BlobPart])
+  const info = await kernel<Archive>('bundleInspectArchive', blob)
+  if (!info.ok || !info.manifest) throw Object.assign(new Error(info.error ?? 'This is not a Pear app package.'), { code: 'EINVAL' })
+  return archiveReview(blob, info, basename(path), { kind: 'archive' })
+}
+
+function archiveReview(blob: Blob, info: Archive, from: string, source: { kind: 'archive' | 'url'; url?: string }): Promise<Review> {
+  const manifest = info.manifest!
+  return installedVersion(manifest.id).then((installed) => ({
+    from,
+    manifest,
+    files: info.files,
+    bytes: info.bytes,
+    verified: 'The package is intact and every file matches its hash.',
+    installed,
+    install: async (update) => {
+      const app = await kernel<{ id: string; name: string }>('bundleInstallArchive', blob, { update, expectDigest: info.digest, from: source.kind === 'url' ? { kind: 'url', url: source.url } : { kind: 'archive' } })
+      return app
+    },
+  }))
+}
+
+async function fromUrl(url: string): Promise<Review> {
+  const got = await tiny.admin.service<{ kind: 'archive'; url: string; bytes: Uint8Array; digest: string } | { kind: 'directory'; url: string; files: Record<string, Uint8Array>; manifestDigest: string }>('tiny.installer', { op: 'fetch', url })
+  const host = new URL(got.url).host
+  if (got.kind === 'archive') {
+    const blob = new Blob([got.bytes as BlobPart])
+    const info = await kernel<Archive>('bundleInspectArchive', blob)
+    if (!info.ok || !info.manifest) throw Object.assign(new Error(info.error ?? 'This is not a Pear app package.'), { code: 'EINVAL' })
+    return archiveReview(blob, info, got.url, { kind: 'url', url: got.url })
+  }
+  const manifest = JSON.parse(new TextDecoder().decode(got.files['manifest.json']!)) as Manifest & { name: string }
+  const list = Object.values(got.files)
+  return {
+    from: `${got.url} (${host}, a folder of files rather than a package)`,
+    manifest: { ...manifest, permissions: manifest.permissions ?? [] },
+    files: list.length,
+    bytes: list.reduce((n, f) => n + f.length, 0),
+    verified: 'Each file matches the hash in its manifest.',
+    installed: await installedVersion(manifest.id),
+    install: async (update) => {
+      const from = { kind: 'url', url: got.url, digest: got.manifestDigest, unsigned: true }
+      const app = update ? await kernel<{ id: string; name: string }>('bundleUpdate', manifest.id, { files: got.files }, { from }) : await kernel<{ id: string; name: string }>('bundleInstall', { files: got.files }, { from })
+      return app
+    },
+  }
+}
+
+async function route(arg: string): Promise<void> {
+  const mine = ++token
+  busy('Checking the package…')
+  try {
+    const r = arg.startsWith('install:') ? await fromUrl(arg.slice('install:'.length)) : await fromFile(arg)
+    if (mine === token) review(r)
+  } catch (e) {
+    const err = e as { code?: string; message?: string }
+    if (mine === token) problem('This can’t be installed', `${err.message ?? 'Something went wrong.'}${err.code ? ` (${err.code})` : ''}`)
+  }
+}
+
+tiny.app.onOpenFile((arg) => void route(arg))
+tiny.app.onOpenURL((url) => void route(`install:${url}`))
+void (async () => {
+  await tiny.ready
+  const first = tiny.app.args.find((a) => a.startsWith('install:') || a.startsWith('/'))
+  if (first) void route(first)
+  else show(el('div', { class: 'center' }, el('h1', null, 'App Installer'), el('p', { class: 'note' }, 'Open a .pearapp file, or follow an install link, to add an app.')))
+})()

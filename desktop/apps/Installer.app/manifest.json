@@ -1,0 +1,16 @@
+{
+  "id": "org.tiny.installer",
+  "name": "App Installer",
+  "version": "1.0.0",
+  "kind": "app",
+  "icon": "Resources/icon.svg",
+  "ui": "Resources/ui/index.html",
+  "window": { "width": 480, "height": 560, "minWidth": 420, "minHeight": 420, "title": "Install App" },
+  "permissions": ["fs.user"],
+  "typeDefinitions": [
+    { "uti": "org.tiny.pearapp", "conformsTo": ["public.archive"], "mime": "application/vnd.pear.app", "description": "Pear app package", "ext": ["pearapp"] }
+  ],
+  "documentTypes": [
+    { "ext": ["pearapp"], "role": "viewer", "uti": "org.tiny.pearapp", "icon": "Resources/icon.svg" }
+  ]
+}

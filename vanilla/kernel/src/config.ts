@@ -271,6 +271,18 @@ export const WELL_KNOWN: Record<string, Schema> = {
     cmdMapping: { type: 'string', default: 'auto', enum: ['auto', 'meta', 'ctrl'] },
     layout: { type: 'string', default: 'us' },
   },
+  'tiny.apps.sources': {
+    /** System scope, set by the deployment: `[{id, name, url}]`. The user can turn these off or reorder them, not delete them. */
+    native: { type: 'array', default: [] },
+    /** Sources the user added: full source records. */
+    added: { type: 'array', default: [] },
+    /** The user's changes to native sources: `{id: {enabled?, priority?}}`. */
+    overrides: { type: 'object', default: {} },
+    /** Where each app installed from a source came from: `{appId: {sourceId, sourceUrl, appId, version, digest, at}}`. */
+    installed: { type: 'object', default: {} },
+    /** Ask for an extra confirmation before installing from a source the user added. */
+    warnUserSources: { type: 'boolean', default: true },
+  },
   'tiny.audio': {
     volume: { type: 'number', default: 1 },
     muted: { type: 'boolean', default: false },

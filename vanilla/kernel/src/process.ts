@@ -14,6 +14,9 @@ import type { PermissionEvent, Permissions, Subject } from './perm'
 import type { SystemEvent } from './system'
 import type { UserDb } from './users'
 import { ROOT_CREDS, type Credentials } from './users'
+import { Packager } from './pearapp'
+import { OS_VERSION } from './bundle'
+import { sha256Hex, verifySignature } from './sources'
 
 const SIGNAL_NAMES = ['SIGHUP', 'SIGINT', 'SIGTERM', 'SIGKILL', 'SIGUSR1', 'SIGUSR2', 'SIGPIPE', 'SIGWINCH', 'SIGTSTP'] as const
 export type Signal = (typeof SIGNAL_NAMES)[number]
@@ -859,11 +862,17 @@ export class ProcessTable {
     return target
   }
 
+  private packager: Packager | undefined
+
   private async systemCall(proc: Proc, call: string, args: unknown[]): Promise<unknown> {
     const sys = this.system
     if (!sys) throw new SysError('ENOSYS', 'the system services are not running')
     const str = (v: unknown, what: string) => {
       if (typeof v !== 'string') throw new SysError('EINVAL', `${what} must be a string`)
+      return v
+    }
+    const bytes = (v: unknown) => {
+      if (!(v instanceof Uint8Array)) throw new SysError('EINVAL', 'data must be bytes')
       return v
     }
     const lastOpts = (n: number) => args[n] as { as?: number; scope?: ConfigScope } | undefined
@@ -910,6 +919,28 @@ export class ProcessTable {
         return sys.bundles.list()
       case 'bundleInfo':
         return sys.bundles.info(str(args[0], 'id'))
+      case 'bundlePackage':
+      case 'bundleCheck': {
+        // the caller reads the folder as itself: its file permissions decide, and the package carries only what it could read
+        const project = this.abs(proc.cwd, str(args[0], 'project'))
+        await sys.perms.checkFs(this.subject(proc), 'readdir', [project])
+        const given = (args[1] ?? {}) as Record<string, unknown>
+        const opts = {
+          ...(typeof given.manifest === 'object' && given.manifest !== null ? { manifest: given.manifest as Record<string, unknown> } : {}),
+          ...(typeof given.version === 'string' ? { version: given.version } : {}),
+          ...(typeof given.extra === 'object' && given.extra !== null && !Array.isArray(given.extra)
+            ? { extra: Object.fromEntries(Object.entries(given.extra as Record<string, unknown>).filter((e): e is [string, string | Uint8Array] => typeof e[1] === 'string' || e[1] instanceof Uint8Array)) }
+            : {}),
+          ...(Array.isArray(given.exclude) ? { exclude: given.exclude.filter((x): x is string => typeof x === 'string') } : {}),
+          ...(call === 'bundlePackage' && typeof given.compress === 'boolean' ? { compress: given.compress } : {}),
+        }
+        const packager = (this.packager ??= new Packager(this.fs, OS_VERSION))
+        return this.fs.as(proc.uid, proc.gid, async () => (call === 'bundleCheck' ? packager.check(project, opts) : new Uint8Array(await (await packager.package(project, opts)).arrayBuffer())))
+      }
+      case 'cryptoDigest':
+        return sha256Hex(bytes(args[0]))
+      case 'cryptoVerify':
+        return verifySignature(str(args[0], 'public key'), str(args[1], 'signature'), bytes(args[2]))
     }
     // launch services act for the caller: a path must be one it can read
     // `as` is the last argument of each call (see Pear in runtime.ts)
@@ -1111,7 +1142,7 @@ export class ProcessTable {
       }
       case 'configGet': case 'configSet': case 'configDelete': case 'configList': case 'configReset': case 'configWatch': case 'configUnwatch':
       case 'permCheck': case 'permRequest': case 'permList':
-      case 'bundleList': case 'bundleInfo':
+      case 'bundleList': case 'bundleInfo': case 'cryptoDigest': case 'cryptoVerify': case 'bundlePackage': case 'bundleCheck':
       case 'launchOpen': case 'launchOpenWith': case 'launchApps': case 'launchAppsFor': case 'launchDefaultFor': case 'launchSetDefault':
       case 'launchTypeOf': case 'launchRunning': case 'launchActivate': case 'launchRecents': case 'launchIconFor': case 'launchTypeConflicts':
         return this.systemCall(proc, call, args)

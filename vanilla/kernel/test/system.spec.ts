@@ -25,7 +25,7 @@ test('first boot creates the hierarchy, users, userland and services', async ({ 
     }
   })
   expect(out.info).toMatchObject({ firstBoot: true, previousShutdown: 'clean', version: '1.0', warnings: [] })
-  expect(out.info.services.sort()).toEqual(['tiny.audio', 'tiny.clipboard', 'tiny.display', 'tiny.input', 'tiny.launch', 'tiny.network', 'tiny.notifications', 'tiny.registry', 'tiny.search', 'tiny.session', 'tiny.settings', 'tiny.system', 'tiny.timers'])
+  expect(out.info.services.sort()).toEqual(['tiny.audio', 'tiny.clipboard', 'tiny.display', 'tiny.input', 'tiny.installer', 'tiny.launch', 'tiny.network', 'tiny.notifications', 'tiny.registry', 'tiny.search', 'tiny.session', 'tiny.settings', 'tiny.sources', 'tiny.system', 'tiny.timers'])
   expect(out.dirs).toEqual({
     '/System': '0:0:755', '/System/Applications': '0:0:755', '/Applications': '0:0:755', '/bin': '0:0:755', '/etc': '0:0:755',
     '/tmp': '0:0:1777', '/var/log': '0:0:755', '/var/db': '0:0:755', '/var/root': '0:0:700',
@@ -41,6 +41,7 @@ test('first boot creates the hierarchy, users, userland and services', async ({ 
     'org.tiny.driver.display service /System/Applications/Display Driver.app system=true',
     'org.tiny.driver.input service /System/Applications/Input Driver.app system=true',
     'org.tiny.driver.timers service /System/Applications/Timer Driver.app system=true',
+    'org.tiny.service.installer service /System/Applications/Installer Service.app system=true',
     'org.tiny.service.launch service /System/Applications/Launch Service.app system=true',
     'org.tiny.service.network service /System/Applications/Network Service.app system=true',
     'org.tiny.service.notifications service /System/Applications/Notification Service.app system=true',
@@ -48,6 +49,7 @@ test('first boot creates the hierarchy, users, userland and services', async ({ 
     'org.tiny.service.search service /System/Applications/Search Service.app system=true',
     'org.tiny.service.session service /System/Applications/Session Service.app system=true',
     'org.tiny.service.settings service /System/Applications/Settings Service.app system=true',
+    'org.tiny.service.sources service /System/Applications/App Sources Service.app system=true',
     'org.tiny.service.system service /System/Applications/System Info Service.app system=true',
   ])
   // system services are trusted: root, not confined to an app
@@ -57,6 +59,7 @@ test('first boot creates the hierarchy, users, userland and services', async ({ 
     'org.tiny.driver.display service uid=0 app=null',
     'org.tiny.driver.input service uid=0 app=null',
     'org.tiny.driver.timers service uid=0 app=null',
+    'org.tiny.service.installer service uid=0 app=null',
     'org.tiny.service.launch service uid=0 app=null',
     'org.tiny.service.network service uid=0 app=null',
     'org.tiny.service.notifications service uid=0 app=null',
@@ -64,6 +67,7 @@ test('first boot creates the hierarchy, users, userland and services', async ({ 
     'org.tiny.service.search service uid=0 app=null',
     'org.tiny.service.session service uid=0 app=null',
     'org.tiny.service.settings service uid=0 app=null',
+    'org.tiny.service.sources service uid=0 app=null',
     'org.tiny.service.system service uid=0 app=null',
   ])
   expect(out.apps).toEqual([]) // services are not apps
@@ -126,12 +130,12 @@ test('a second boot finds what the first left; a session that was not shut down 
   expect(out.clean).toMatchObject({ firstBoot: false, previousShutdown: 'clean', warnings: [] })
   expect(out.afterClean.docs).toBe('keep')
   expect(out.afterClean.config).toBe('v')
-  expect(out.afterClean.bundles).toBe(13) // not installed twice
+  expect(out.afterClean.bundles).toBe(15) // not installed twice
   expect(out.afterClean.pids).toEqual(out.pidsBefore)
-  expect(out.clean.services).toHaveLength(13)
+  expect(out.clean.services).toHaveLength(15)
   expect(out.crashed).toMatchObject({ firstBoot: false, previousShutdown: 'crash', warnings: [] })
-  expect(out.crashed.services).toHaveLength(13)
-  expect(out.afterCrash).toEqual({ docs: 'keep', config: 'v', bundles: 13, pids: out.pidsBefore })
+  expect(out.crashed.services).toHaveLength(15)
+  expect(out.afterCrash).toEqual({ docs: 'keep', config: 'v', bundles: 15, pids: out.pidsBefore })
 })
 
 test('the settings service: get, set with the caller\'s rights, and change notifications', async ({ page }) => {

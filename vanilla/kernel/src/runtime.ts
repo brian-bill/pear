@@ -107,6 +107,19 @@ export interface Pear extends FsApi {
   bundleList(): Promise<BundleInfo[]>
   bundleInfo(id: string): Promise<BundleInfo>
 
+  /**
+   * A project folder as a `.pearapp` (`contracts/app-distribution.md`). Reads the folder with the caller's own file rights
+   * and runs none of its code. `ENOENT` without a manifest, `EINVAL` for anything else wrong with it.
+   */
+  bundlePackage(project: string, opts?: { manifest?: Record<string, unknown>; version?: string; extra?: Record<string, string | Uint8Array>; exclude?: string[]; compress?: boolean }): Promise<Uint8Array>
+  /** What `bundlePackage` would do, without keeping the package: the checks, the sizes, and the size it would have. */
+  bundleCheck(project: string, opts?: { manifest?: Record<string, unknown>; version?: string; extra?: Record<string, string | Uint8Array>; exclude?: string[] }): Promise<import('./pearapp').PackageReport>
+
+  /** SHA-256 (hex) of bytes. A sandboxed process has no `crypto.subtle`, so the kernel does it. */
+  cryptoDigest(data: Uint8Array): Promise<string>
+  /** Check an Ed25519 signature (base64) over bytes with a base64 public key. `ENOSYS` if the browser cannot. */
+  cryptoVerify(publicKey: string, signature: string, data: Uint8Array): Promise<boolean>
+
   /** Launch services. `target` is a bundle id, an absolute path, or a URL. Returns the pid that has it. */
   launchOpen(target: string, opts?: OpenOptions & ActingFor): Promise<number>
   launchOpenWith(path: string, appId: string, opts?: ActingFor): Promise<number>
@@ -183,7 +196,7 @@ const decoder = new TextDecoder()
 const SYSTEM_CALLS = [
   'getuid', 'getgid', 'getgroups', 'getappid', 'driverEmit', 'logWrite', 'logQuery', 'fsChanges',
   'configGet', 'configSet', 'configDelete', 'configList', 'configReset', 'configWatch', 'configUnwatch',
-  'permCheck', 'permRequest', 'permList', 'bundleList', 'bundleInfo',
+  'permCheck', 'permRequest', 'permList', 'bundleList', 'bundleInfo', 'bundlePackage', 'bundleCheck', 'cryptoDigest', 'cryptoVerify',
   'launchOpen', 'launchOpenWith', 'launchApps', 'launchAppsFor', 'launchDefaultFor', 'launchSetDefault',
   'launchTypeOf', 'launchRunning', 'launchActivate', 'launchRecents', 'launchIconFor', 'launchTypeConflicts',
 ] as const

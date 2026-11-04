@@ -7,8 +7,11 @@
 /// The body is a run of records, `meta length u32 | meta (JSON) | content (meta.size bytes)`, ended by a record
 /// of length 0. It is gzip-compressed when `flags` bit 0 is set. The checksum covers every byte before `END!`
 /// as stored, so a damaged image is detected without decompressing it.
+import { ByteReader, END_RECORD, FLAG_GZIP, bodyStream, frame, gzipped, readRecord, record, unframe } from './container'
 import { SysError } from './errors'
 import type { FileSystem, Stat } from './fs'
+
+export { crc32 } from './container'
 
 const IMAGE_MAGIC = 'TINYIMG\0'
 /** An encrypted image: magic | salt (16) | iv (12) | AES-GCM of a whole plain image (key from the passphrase, PBKDF2-SHA-256). */
@@ -17,9 +20,6 @@ const PBKDF2_ROUNDS = 210_000
 const IMAGE_VERSION = 1
 /** Images older than this are no longer read. */
 const IMAGE_MIN_VERSION = 1
-const FLAG_GZIP = 1
-const TRAILER = 'END!'
-const FIXED = 8 + 2 + 2 + 4
 
 const enc = new TextEncoder()
 const dec = new TextDecoder()
@@ -93,70 +93,6 @@ interface Meta {
   xattrs?: Record<string, string>
 }
 
-// ---- checksum
-
-const TABLE = (() => {
-  const t = new Uint32Array(256)
-  for (let n = 0; n < 256; n++) {
-    let c = n
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
-    t[n] = c >>> 0
-  }
-  return t
-})()
-
-export async function crc32(blob: Blob): Promise<number> {
-  let c = 0xffffffff
-  const reader = blob.stream().getReader()
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    for (let i = 0; i < value.length; i++) c = TABLE[(c ^ value[i]!) & 0xff]! ^ (c >>> 8)
-  }
-  return (c ^ 0xffffffff) >>> 0
-}
-
-const u32 = (n: number) => {
-  const b = new Uint8Array(4)
-  new DataView(b.buffer).setUint32(0, n, true)
-  return b
-}
-
-class ByteReader {
-  private buf: Uint8Array = new Uint8Array(0)
-  private reader: ReadableStreamDefaultReader<Uint8Array>
-  constructor(stream: ReadableStream<Uint8Array>) {
-    this.reader = stream.getReader()
-  }
-  async read(n: number): Promise<Uint8Array> {
-    if (n === 0) return new Uint8Array(0)
-    const parts: Uint8Array[] = [this.buf]
-    let have = this.buf.length
-    while (have < n) {
-      const { done, value } = await this.reader.read()
-      if (done) throw new SysError('EIO', 'the image ends early')
-      parts.push(value)
-      have += value.length
-    }
-    const all: Uint8Array = parts.length === 1 ? parts[0]! : concat(parts, have)
-    this.buf = all.subarray(n)
-    return all.subarray(0, n)
-  }
-  cancel(): void {
-    void this.reader.cancel().catch(() => {})
-  }
-}
-
-function concat(parts: Uint8Array[], total: number): Uint8Array {
-  const out = new Uint8Array(total)
-  let at = 0
-  for (const p of parts) {
-    out.set(p, at)
-    at += p.length
-  }
-  return out
-}
-
 const within = (path: string, root: string) => root === '/' || path === root || path.startsWith(`${root}/`)
 const norm = (p: string) => (p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p)
 const join = (dir: string, name: string) => (dir === '/' ? `/${name}` : `${dir}/${name}`)
@@ -228,12 +164,8 @@ export class Images {
         meta.xattrs = {}
         for (const n of names) meta.xattrs[n] = (await this.fs.getxattr(path, n)) ?? ''
       }
-      const json = enc.encode(JSON.stringify(meta))
-      parts.push(u32(json.length), json as BlobPart)
-      if (content) {
-        parts.push(content as BlobPart)
-        bytes += content.length
-      }
+      parts.push(...record(meta, content ?? undefined))
+      if (content) bytes += content.length
       entries++
       await tick()
     }
@@ -253,21 +185,13 @@ export class Images {
       }
       await walk(root)
     }
-    parts.push(u32(0))
+    parts.push(END_RECORD as BlobPart)
 
     const compress = opts.compress ?? true
     let body = new Blob(parts)
-    if (compress) body = await new Response(body.stream().pipeThrough(new CompressionStream('gzip'))).blob()
+    if (compress) body = await gzipped(body)
     const header: ImageHeader = { version: IMAGE_VERSION, created: Date.now(), osVersion: this.osVersion, roots, entries, bytes, compressed: compress }
-    const json = enc.encode(JSON.stringify(header))
-    const fixed = new Uint8Array(FIXED)
-    const dv = new DataView(fixed.buffer)
-    fixed.set(enc.encode(IMAGE_MAGIC), 0)
-    dv.setUint16(8, IMAGE_VERSION, true)
-    dv.setUint16(10, compress ? FLAG_GZIP : 0, true)
-    dv.setUint32(12, json.length, true)
-    const head = new Blob([fixed, json as BlobPart, body])
-    const plain = new Blob([head, enc.encode(TRAILER) as BlobPart, u32(await crc32(head)) as BlobPart], { type: 'application/x-tinyimg' })
+    const plain = await frame(IMAGE_MAGIC, IMAGE_VERSION, compress ? FLAG_GZIP : 0, header, body, 'application/x-tinyimg')
     return opts.passphrase ? seal(plain, opts.passphrase) : plain
   }
 
@@ -287,29 +211,8 @@ export class Images {
       if (!passphrase) throw new SysError('EACCES', 'this image is encrypted: a passphrase is needed')
       file = await unseal(file, passphrase)
     }
-    if (file.size < FIXED + TRAILER.length + 4) throw new SysError('EINVAL', 'not a Pear disk image')
-    const fixed = new Uint8Array(await file.slice(0, FIXED).arrayBuffer())
-    if (dec.decode(fixed.subarray(0, 8)) !== IMAGE_MAGIC) throw new SysError('EINVAL', 'not a Pear disk image')
-    const dv = new DataView(fixed.buffer)
-    const version = dv.getUint16(8, true)
-    if (version > IMAGE_VERSION) throw new SysError('EINVAL', `this image is version ${version}; this system reads up to ${IMAGE_VERSION}`)
-    if (version < IMAGE_MIN_VERSION) throw new SysError('EINVAL', `image version ${version} is too old to read`)
-    const gzip = (dv.getUint16(10, true) & FLAG_GZIP) !== 0
-    const headerLen = dv.getUint32(12, true)
-    const end = file.size - (TRAILER.length + 4)
-    if (FIXED + headerLen > end) throw new SysError('EIO', 'the image is damaged')
-
-    const trailer = new Uint8Array(await file.slice(end).arrayBuffer())
-    if (dec.decode(trailer.subarray(0, TRAILER.length)) !== TRAILER) throw new SysError('EIO', 'the image is incomplete')
-    if ((await crc32(file.slice(0, end))) !== new DataView(trailer.buffer).getUint32(TRAILER.length, true)) throw new SysError('EIO', 'the image is damaged (checksum mismatch)')
-
-    let header: ImageHeader
-    try {
-      header = JSON.parse(dec.decode(new Uint8Array(await file.slice(FIXED, FIXED + headerLen).arrayBuffer()))) as ImageHeader
-    } catch {
-      throw new SysError('EIO', 'the image header is damaged')
-    }
-    return { header, body: file.slice(FIXED + headerLen, end), gzip }
+    const { header, body, gzip } = await unframe(file, { magic: IMAGE_MAGIC, version: IMAGE_VERSION, minVersion: IMAGE_MIN_VERSION, what: 'Pear disk image', noun: 'image' })
+    return { header: header as ImageHeader, body, gzip }
   }
 
   async restore(file: Blob, opts: RestoreOptions, beforeReplace?: () => Promise<void>): Promise<RestoreResult> {
@@ -330,17 +233,14 @@ export class Images {
     }
 
     const res: RestoreResult = { files: 0, dirs: 0, symlinks: 0, bytes: 0, skipped: {}, restartRequired: opts.mode === 'replace' }
-    const input = gzip ? body.stream().pipeThrough(new DecompressionStream('gzip')) : body.stream()
-    const reader = new ByteReader(input)
+    const reader = new ByteReader(bodyStream(body, gzip))
     let count = 0
     const dirs: Array<[string, Meta]> = []
     try {
       for (;;) {
-        const len = new DataView((await reader.read(4)).slice().buffer).getUint32(0, true)
-        if (len === 0) break
-        const meta = JSON.parse(dec.decode(await reader.read(len))) as Meta
-        const content = meta.kind === 'file' ? await reader.read(meta.size) : null
-        await this.place(meta, content, res, dirs)
+        const rec = await readRecord<Meta>(reader)
+        if (!rec) break
+        await this.place(rec.meta, rec.content, res, dirs)
         count++
         if (opts.progress?.(count, res.bytes) === false) throw new SysError('ECANCELED', 'the import was canceled')
         if (count % 50 === 0) await new Promise((r) => setTimeout(r))

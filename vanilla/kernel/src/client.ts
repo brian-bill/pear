@@ -1,6 +1,7 @@
 import type { FileSystem, FsMethod } from './fs'
 import type { Kernel as KernelImpl, KernelBootOptions, KernelMethod } from './kernel'
 import type { KernelEvent } from './process'
+import { parseIntents, withoutIntents, type Intent } from './intents'
 import { manageHosts, type HostManagerOptions } from './host-manager'
 import type { Response, Request } from './worker'
 
@@ -9,7 +10,12 @@ export type Kernel = {
   shutdown(opts?: { destroy?: boolean }): Promise<void>
   onEvent(listener: (e: KernelEvent) => void): () => void
 } & Pick<FileSystem, FsMethod> &
-  Pick<KernelImpl, KernelMethod>
+  Pick<KernelImpl, KernelMethod> & {
+    /** Install intents the page was opened with (`?install=`, `?addSource=`), until `clearIntents`. */
+    intents(): Intent[]
+    /** Take the intent parameters out of the address bar, so a reload does not repeat them. */
+    clearIntents(): void
+  }
 
 /** An error thrown by the kernel. `code` is an errno name such as `ENOENT`. */
 export class KernelError extends Error {
@@ -99,9 +105,23 @@ export function createKernel(worker: Worker, opts: HostManagerOptions = {}): Ker
     document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && flush())
   }
 
+  let intents: Intent[] = typeof location === 'undefined' ? [] : parseIntents(location.search)
+  const local: Record<string, unknown> = {
+    onEvent,
+    intents: () => [...intents],
+    clearIntents: () => {
+      intents = []
+      try {
+        history.replaceState(history.state, '', withoutIntents(location.href))
+      } catch {
+        // an address that cannot be rewritten (a sandboxed frame): the intents are still cleared here
+      }
+    },
+  }
+
   return new Proxy({} as Kernel, {
     // `toJSON` is left out so JSON.stringify of a value holding the kernel (a test handle, a log) serializes it
     // as `{}` instead of turning the inspection into a kernel call
-    get: (_, method: string) => (method === 'onEvent' ? onEvent : method === 'toJSON' ? undefined : (...args: unknown[]) => call(method, args)),
+    get: (_, method: string) => (method in local ? local[method] : method === 'toJSON' ? undefined : (...args: unknown[]) => call(method, args)),
   })
 }

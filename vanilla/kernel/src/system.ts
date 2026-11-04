@@ -65,6 +65,8 @@ const SERVICES = [
   { file: 'search', id: 'org.tiny.service.search', name: 'Search Service', port: 'tiny.search' },
   { file: 'session', id: 'org.tiny.service.session', name: 'Session Service', port: 'tiny.session' },
   { file: 'network', id: 'org.tiny.service.network', name: 'Network Service', port: 'tiny.network' },
+  { file: 'installer', id: 'org.tiny.service.installer', name: 'Installer Service', port: 'tiny.installer' },
+  { file: 'sources', id: 'org.tiny.service.sources', name: 'App Sources Service', port: 'tiny.sources' },
   { file: 'system', id: 'org.tiny.service.system', name: 'System Info Service', port: 'tiny.system' },
 ] as const
 

@@ -1,5 +1,6 @@
 import { tiny } from '@tiny/sdk'
 import { attempt, button, choose, group, h, line, say, type Pane } from '../lib'
+import { browseSection, provenanceNames, sourcesSection, updatesSection } from './sources'
 
 interface Bundle { id: string; name: string; version: string; kind: string; system: boolean; permissions: string[]; path: string }
 interface Rec { id: string; name: string }
@@ -32,20 +33,29 @@ async function conflicts(): Promise<HTMLElement | null> {
 export const appsPane: Pane = {
   id: 'apps', title: 'Apps', icon: '▦', color: '#ff9f0a', keywords: 'installed applications uninstall default open with file types permissions version',
   async render(root) {
-    const bundles = (await k<Bundle[]>('bundleList')).filter((b) => b.kind === 'app').sort((a, b) => a.name.localeCompare(b.name))
+    const installedApps = async () => (await k<Bundle[]>('bundleList')).filter((b) => b.kind === 'app').sort((a, b) => a.name.localeCompare(b.name))
     const list = h('div', { class: 'group' })
+    let from: Record<string, string> = await provenanceNames()
     const draw = (items: Bundle[]) => list.replaceChildren(...items.map((b) => h('div', { class: 'line', 'data-app': b.id },
-      h('div', { class: 'label' }, b.name, h('small', null, `${b.id} · version ${b.version}${b.system ? ' · system' : ''}${b.permissions.length ? ` · ${b.permissions.join(', ')}` : ''}`)),
+      h('div', { class: 'label' }, b.name, h('small', null, `${b.id} · version ${b.version}${b.system ? ' · system' : ''}${from[b.id] ? ` · from ${from[b.id]}` : ''}${b.permissions.length ? ` · ${b.permissions.join(', ')}` : ''}`)),
       h('div', { class: 'ctl' }, button('Uninstall', async () => {
         if (b.system) return void say(`${b.name} is part of the system and cannot be removed.`, true)
         if (!(await tiny.dialogs.confirm(`Uninstall ${b.name}?`, { detail: 'The app is removed. Its data is kept.', danger: true, buttons: ['Uninstall', 'Cancel'] }))) return
         if ((await attempt(() => k('bundleUninstall', b.id), `${b.name} was uninstalled.`)) === undefined) return
-        draw((await k<Bundle[]>('bundleList')).filter((x) => x.kind === 'app').sort((x, y) => x.name.localeCompare(y.name)))
+        draw(await installedApps())
       }, 'danger', { disabled: b.system, 'aria-label': `Uninstall ${b.name}` })))))
-    draw(bundles)
+    draw(await installedApps())
+    const redraw = async () => {
+      from = await provenanceNames()
+      draw(await installedApps())
+    }
+    const browse = browseSection(() => void redraw())
     const conf = await conflicts()
     root.append(h('div', { class: 'pane' },
       h('section', null, h('h2', null, 'Installed apps'), list),
+      await sourcesSection(() => void browse.refresh(), tiny.app.args.find((a) => a.startsWith('add-source:'))?.slice('add-source:'.length)),
+      browse.el,
+      updatesSection(() => void redraw()),
       h('section', null, h('h2', null, 'Default apps'), await defaults()),
       conf))
   },

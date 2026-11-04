@@ -26,9 +26,18 @@ Apps that ship with Pear live in `desktop/apps/<Name>.app/`. At first boot (and 
 ### How it runs (so you know what you can and cannot do)
 
 * The **process** is the standard host (`sdk/host.ts`): an ordinary Vanilla app process, confined by Vanilla to the app's container and the permissions in the manifest.
-* Each **window** is a sandboxed iframe (opaque origin, no network, CSP: inline scripts and styles, `data:`/`blob:` images only). It cannot touch Vanilla or the page.
+* Each **window** is a sandboxed iframe (opaque origin, no network, CSP: inline scripts and styles, WebAssembly compilation (`wasm-unsafe-eval`, not `eval`), `data:`/`blob:` images only). It cannot touch Vanilla or the page.
 * Every `tiny.readFile(...)`, `tiny.configGet(...)`, `tiny.service(...)` from a window travels window -> Desktop -> the app's process and runs **as the app**. Vanilla's permissions apply exactly: an app with only `fs.container` gets `EACCES` outside its container. Files the user picks with the Open/Save panel are the exception: Desktop grants the app those paths.
 * One process per app; many windows. When the last window closes the process ends. Per-window state lives in the window; share state through files or settings.
+
+### An app that is a plain project (packaged from Code, or written by hand)
+
+An app whose bundle has no `.build` marker (the apps Pear ships carry one) was not built against `@tiny/sdk`. It runs as Code's preview does:
+
+* `tiny` is a global: Desktop puts the SDK, as a script, first in the window.
+* A relative path that is **read** (`readFile`, `readdir`, `stat`, `lstat`, `exists`) is looked up in the app's bundle first (`src/main.wasm` finds the bundle's `src/main.wasm`), then in its container. A path that is **written** is always the container's: the bundle is read-only.
+
+So `tiny.readFile('src/main.wasm')` then `WebAssembly.instantiate(bytes)` works in the preview and once installed.
 
 ### manifest.json
 
@@ -92,7 +101,7 @@ Document apps: handle both `tiny.app.args` at startup and `onOpenFile` later; a 
 
 ### Host files: `tiny.host`
 
-`importFiles(destFolder, {directory?})` opens the real computer's file picker and copies the choice into a folder the app may write; `exportPath(path, {saveAs?})` downloads a file (a folder becomes a zip).
+`importFiles(destFolder, {directory?})` opens the real computer's file picker and copies the choice into a folder the app may write; `exportPath(path, {saveAs?})` downloads a file (a folder becomes a zip); `origin()` is the address this Pear is served from (for an install link, `<origin>?install=<package URL>`); `runtime()` is the source of the standard app process, for a package of a UI project that has none.
 
 ### Shell: `tiny.shell`
 
@@ -104,7 +113,7 @@ Document apps: handle both `tiny.app.args` at startup and `onOpenFile` later; a 
 
 ### Admin: `tiny.admin` (Settings, Activity Monitor, Console, Finder only)
 
-`tiny.admin.kernel('permList')`, `tiny.admin.kernel('configSet', domain, key, value)`, `tiny.admin.service('tiny.network', {op: 'rules.set', ...})`: calls that run as the system. Allowed kernel calls are listed in `src/apphost.ts` (`ADMIN_KERNEL`). Other apps get `EPERM`.
+`tiny.admin.kernel('permList')`, `tiny.admin.kernel('configSet', domain, key, value)`, `tiny.admin.service('tiny.network', {op: 'rules.set', ...})`, `tiny.admin.service('tiny.sources', {op: 'list'})` (app sources; system only, see `contracts/app-registry.md`): calls that run as the system. Allowed kernel calls are listed in `src/apphost.ts` (`ADMIN_KERNEL`). Other apps get `EPERM`.
 
 ### Helpers
 

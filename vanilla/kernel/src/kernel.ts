@@ -11,6 +11,7 @@ import { Permissions, type AuditEntry, type Capability, type Grant, type Status 
 import { bootSystem, SESSION_MARK, type BootInfo, type SystemOptions } from './system'
 import { TypeRegistry, type TypeInfo } from './uti'
 import { UserDb } from './users'
+import { Packager, ProvenanceStore, readPackage, type ArchiveInfo, type InstalledFrom, type PackageOptions, type PackageReport } from './pearapp'
 import { Images, type ImageCreateOptions, type ImageInfo, type RestoreOptions, type RestoreResult } from './image'
 import type { HostMountOptions } from './hostvol'
 import { Logger, type CrashReport, type Diagnostics, type LogEntry, type LogFilter, type LogInput, type Trace } from './log'
@@ -264,14 +265,83 @@ export class Kernel {
 
   // ---- app bundles
 
-  /** `source`: `{path}` of a `.app` directory in the VFS, or `{files}` with the contents. `grant` gives the app every permission it declares. */
-  bundleInstall = async (source: BundleSource, opts: { location?: string; grant?: boolean } = {}): Promise<BundleInfo> => {
+  private provenanceImpl: ProvenanceStore | undefined
+  private get provenance(): ProvenanceStore {
+    return (this.provenanceImpl ??= new ProvenanceStore(this.fs))
+  }
+  /** A failed note about where an install came from must not undo the install. */
+  private async noteSource(id: string, from: Omit<InstalledFrom, 'at'> | undefined): Promise<void> {
+    if (from) await this.provenance.set(id, from).catch(() => {})
+  }
+
+  /**
+   * `source`: `{path}` of a `.app` directory in the VFS, or `{files}` with the contents. `grant` gives the app every
+   * permission it declares. `from` records where it came from (`bundleInstalledFrom`).
+   */
+  bundleInstall = async (source: BundleSource, opts: { location?: string; grant?: boolean; from?: Omit<InstalledFrom, 'at'> } = {}): Promise<BundleInfo> => {
     const info = await this.sys.bundles.install(source, opts)
     if (opts.grant || info.system) this.sys.perms.grantDeclared(info.id)
+    await this.noteSource(info.id, opts.from)
     return info
   }
-  bundleUpdate = (id: string, source: BundleSource): Promise<BundleInfo> => this.sys.bundles.update(id, source)
-  bundleUninstall = (id: string, opts?: { deleteData?: boolean }): Promise<void> => this.sys.bundles.uninstall(id, opts)
+  bundleUpdate = async (id: string, source: BundleSource, opts: { from?: Omit<InstalledFrom, 'at'> } = {}): Promise<BundleInfo> => {
+    const info = await this.sys.bundles.update(id, source)
+    await this.noteSource(id, opts.from)
+    return info
+  }
+  bundleUninstall = async (id: string, opts?: { deleteData?: boolean }): Promise<void> => {
+    await this.sys.bundles.uninstall(id, opts)
+    await this.provenance.delete(id).catch(() => {})
+  }
+
+  // ---- app packages (`contracts/app-distribution.md`)
+
+  private packagerImpl: Packager | undefined
+  private get packager(): Packager {
+    return (this.packagerImpl ??= new Packager(this.fs, OS_VERSION))
+  }
+  /** A project directory as a `.pearapp`. Reads files only; no project code runs. */
+  bundlePackage = (project: string, opts: Omit<PackageOptions, 'progress'> = {}): Promise<Blob> => this.packager.package(project, opts)
+  /** What `bundlePackage` would do, without writing a package: the checks, sizes and the size it would have. */
+  bundleCheck = (project: string, opts: Omit<PackageOptions, 'progress'> = {}): Promise<PackageReport> => this.packager.check(project, opts)
+  /** Verify a package (checksum and every file's hash) and describe it. Installs nothing. */
+  bundleInspectArchive = async (file: Blob): Promise<ArchiveInfo> => (await readPackage(file)).info
+  /**
+   * Verify a package, then install it (or `update` an installed app). Nothing is placed until every hash matches.
+   * `expectDigest` is what a link or registry pinned: a package that is not exactly that is refused.
+   */
+  bundleInstallArchive = async (
+    file: Blob,
+    opts: {
+      location?: string
+      grant?: boolean
+      update?: boolean
+      expectDigest?: string
+      /** What a listing promised: the package must be this app, this version, and ask for no more than these permissions. */
+      expect?: { id?: string; version?: string; permissions?: string[] }
+      from?: Omit<InstalledFrom, 'at'>
+    } = {},
+  ): Promise<BundleInfo> => {
+    const { info, files } = await readPackage(file)
+    if (!info.ok || !info.manifest) throw new SysError('EINVAL', info.error ?? 'the package cannot be read')
+    if (opts.expectDigest && opts.expectDigest.toLowerCase() !== info.digest) throw new SysError('EINVAL', 'the package is not the one that was expected (digest mismatch)')
+    const want = opts.expect
+    if (want?.id !== undefined && info.manifest.id !== want.id) throw new SysError('EINVAL', `the package is ${info.manifest.id}, not ${want.id}`)
+    if (want?.version !== undefined && info.manifest.version !== want.version) throw new SysError('EINVAL', `the package is version ${info.manifest.version}, not ${want.version}`)
+    const extra = want?.permissions ? info.manifest.permissions.filter((p) => !want.permissions!.includes(p)) : []
+    if (extra.length) throw new SysError('EINVAL', `the package asks for permissions its listing does not show: ${extra.join(', ')}`)
+    const from = { kind: 'archive' as const, digest: info.digest, version: info.manifest.version, unsigned: true, ...opts.from }
+    if (opts.update) return this.bundleUpdate(info.manifest.id, { files }, { from })
+    return this.bundleInstall({ files }, { location: opts.location, grant: opts.grant, from })
+  }
+  /** Where an installed app came from, or `null` (built in, or put there by hand). Registry installs are read from the sources setting. */
+  bundleInstalledFrom = async (id: string): Promise<InstalledFrom | null> => {
+    const own = await this.provenance.get(id)
+    if (own) return own
+    const reg = ((await this.sys.config.get('tiny.apps.sources', 'installed', {})) ?? {}) as Record<string, { sourceId: string; sourceUrl: string; version: string; digest: string; at: string }>
+    const r = reg[id]
+    return r ? { kind: 'registry', sourceId: r.sourceId, url: r.sourceUrl, version: r.version, digest: r.digest, at: r.at, unsigned: true } : null
+  }
   bundleList = async (): Promise<BundleInfo[]> => this.sys.bundles.list()
   bundleInfo = async (id: string): Promise<BundleInfo> => this.sys.bundles.info(id)
   bundleVerify = (path: string): Promise<VerifyResult> => this.sys.bundles.verify(path)
@@ -361,7 +431,7 @@ export const KERNEL_METHODS = [
   'logWrite', 'logQuery', 'logExport', 'logClear', 'logFlush', 'logSubscribe', 'crashList', 'crashGet', 'crashSubmit', 'crashClear',
   'diagSnapshot', 'traceStart', 'traceMark', 'traceMeasure', 'traceStop', 'bootMarks',
   'bootInfo', 'configGet', 'configSet', 'configDelete', 'configList', 'configReset', 'configRegister', 'configDomains', 'configExternal', 'configFlush',
-  'bundleInstall', 'bundleUpdate', 'bundleUninstall', 'bundleList', 'bundleInfo', 'bundleVerify', 'bundleRescan',
+  'bundleInstall', 'bundleUpdate', 'bundleUninstall', 'bundlePackage', 'bundleCheck', 'bundleInspectArchive', 'bundleInstallArchive', 'bundleInstalledFrom', 'bundleList', 'bundleInfo', 'bundleVerify', 'bundleRescan',
   'launchOpen', 'launchOpenWith', 'launchApps', 'launchAppsFor', 'launchDefaultFor', 'launchSetDefault', 'launchTypeOf', 'launchRunning', 'launchActivate', 'launchRecents', 'launchIconFor', 'launchTypeConflicts', 'launchSetTypeOwner',
   'permList', 'permStatus', 'permGrant', 'permRevoke', 'permReset', 'permSetPrompter', 'permRespond', 'permPickerGrant', 'permAudit',
 ] as const

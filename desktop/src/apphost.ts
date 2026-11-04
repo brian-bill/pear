@@ -3,6 +3,7 @@
 /// settings and service calls *inside the app's process*, so Vanilla's permissions apply as for any app.
 import type { Kernel } from '../../vanilla/kernel/src/client'
 import type { HostEvent, HostReply, InitMsg, MenuSpec, ThemeInfo, UiToDesktop } from '../sdk/protocol'
+import { clientSource, hostSource } from 'virtual:bundled-apps'
 import baseCss from '../sdk/base.css?raw'
 import { ICONS, TYPE_ICONS } from './apps/icons'
 import type { AppInfo, AppRegistry } from './apps/registry'
@@ -11,7 +12,8 @@ import type { MenuBar, Menu, MenuItem } from './shell/menubar'
 import { showPopup } from './shell/popup'
 import { Win, type Rect, type WindowManager } from './wm/windows'
 
-const CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; frame-src 'none'; form-action 'none'"
+// `wasm-unsafe-eval` lets an app compile WebAssembly (an app's entry may be wasm, and Code builds it); it does not allow eval()
+const CSP = "default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; frame-src 'none'; form-action 'none'"
 /**
  * Safari shows fetched pages in a nested sandboxed frame, so that frame needs the page's own styles, scripts,
  * iframes and workers. Scripts still run with an opaque origin (no access to the app or kernel) and
@@ -32,11 +34,13 @@ const enc = new TextEncoder()
 const dec = new TextDecoder()
 
 /** Apps that manage the system. Their calls under `admin.` run as the system; every other app is refused. */
-const ADMIN_APPS = new Set(['org.tiny.settings', 'org.tiny.activitymonitor', 'org.tiny.console', 'org.tiny.finder'])
+/** Calls that only read a path: in a project they look in the app's bundle first. */
+const READS = new Set(['readFile', 'readdir', 'stat', 'lstat', 'exists'])
+const ADMIN_APPS = new Set(['org.tiny.settings', 'org.tiny.activitymonitor', 'org.tiny.console', 'org.tiny.finder', 'org.tiny.installer'])
 /** The kernel calls `admin.kernel` passes through. Anything that moves the process table or the file system's contents stays out. */
 const ADMIN_KERNEL = new Set([
   'permList', 'permStatus', 'permGrant', 'permRevoke', 'permReset', 'permAudit',
-  'bundleList', 'bundleInfo', 'bundleUninstall', 'bundleVerify', 'bundleRescan', 'bundleInstall', 'bundleUpdate',
+  'bundleList', 'bundleInfo', 'bundleUninstall', 'bundleVerify', 'bundleRescan', 'bundleInstall', 'bundleUpdate', 'bundleInspectArchive', 'bundleInstallArchive', 'bundleInstalledFrom',
   'configGet', 'configSet', 'configDelete', 'configList', 'configReset', 'configDomains', 'configFlush',
   'listProcesses', 'processInfo', 'kill', 'ping', 'diagSnapshot', 'bootInfo', 'bootMarks', 'fsInfo',
   'logQuery', 'logExport', 'logClear', 'logWrite', 'crashList', 'crashGet', 'crashSubmit', 'crashClear', 'traceStart', 'traceMark', 'traceMeasure', 'traceStop',
@@ -147,7 +151,12 @@ export class AppHost {
 
   /** Open an app: a new window, or the existing instance's front window. Resolves the window. */
   async launch(appId: string, o: { args?: string[]; state?: unknown; rect?: Partial<Rect>; newWindow?: boolean } = {}): Promise<AppWindow | null> {
-    const app = this.d.registry.get(appId)
+    let app = this.d.registry.get(appId)
+    // an app that was installed a moment ago may not be in the list yet (the install event refreshes it): look again before giving up
+    if (!app) {
+      await this.d.registry.refresh().catch(() => {})
+      app = this.d.registry.get(appId)
+    }
     if (!app?.ui) {
       // a process-only app: Vanilla launches it, Desktop has nothing to show
       await this.d.kernel.launchOpen(appId, { args: o.args }).catch((e) => this.d.notify('Cannot open the app', (e as Error).message))
@@ -310,6 +319,32 @@ export class AppHost {
     return aw
   }
 
+  private projects = new Map<string, boolean>()
+  /**
+   * An app whose scripts Pear did not build: no `.build` marker (the apps Pear ships carry one), so it is a project that was
+   * packaged from Code or written by hand. Such an app gets the same `tiny` and the same relative paths as Code's preview.
+   */
+  private async isProject(app: AppInfo): Promise<boolean> {
+    const key = `${app.path}:${app.version}`
+    let known = this.projects.get(key)
+    if (known === undefined) {
+      known = !(await this.d.kernel.exists(`${app.path}/.build`).catch(() => false))
+      this.projects.set(key, known)
+    }
+    return known
+  }
+
+  /**
+   * In a project, a relative path that is read resolves in the bundle first (its resources: `src/main.wasm`), then in the
+   * app's container; a path that is written always goes to the container, which is the only place the app may write.
+   */
+  private async readFromBundle(app: AppInfo, name: string, args: unknown[]): Promise<unknown[]> {
+    const first = args[0]
+    if (!READS.has(name) || typeof first !== 'string' || !first || first.startsWith('/') || /^[a-z][a-z0-9+.-]*:/i.test(first) || !(await this.isProject(app))) return args
+    const inBundle = `${app.path}/${first}`
+    return (await this.d.kernel.exists(inBundle).catch(() => false)) ? [inBundle, ...args.slice(1)] : args
+  }
+
   /** The app's UI page with its styles and scripts inlined, a strict CSP, and the base styles. */
   private async document(app: AppInfo): Promise<string> {
     const k = this.d.kernel
@@ -332,6 +367,12 @@ export class AppHost {
       if (/^(data:|blob:)/.test(src)) continue
       const bytes = await read(src).catch(() => null)
       if (bytes) img.setAttribute('src', toDataUrl(bytes, src))
+    }
+    if (await this.isProject(app)) {
+      // a packaged project: plain scripts that expect `tiny`, as in Code's preview
+      const sdk = doc.createElement('script')
+      sdk.textContent = clientSource.replace(/<\/script/gi, '<\\/script')
+      doc.head.prepend(sdk)
     }
     const meta = doc.createElement('meta')
     meta.httpEquiv = 'Content-Security-Policy'
@@ -489,7 +530,7 @@ export class AppHost {
       if (v === undefined || v === null) throw Object.assign(new Error(`${what} is required`), { code: 'EINVAL' })
       return v as T
     }
-    if (method.startsWith('kernel.')) return inst.call(method.slice(7), args)
+    if (method.startsWith('kernel.')) return inst.call(method.slice(7), await this.readFromBundle(inst.app, method.slice(7), args))
     if (method.startsWith('admin.')) {
       if (!ADMIN_APPS.has(inst.app.id) || !inst.app.path.startsWith('/Applications/')) throw Object.assign(new Error(`${inst.app.name} may not administer the system`), { code: 'EPERM' })
       if (method === 'admin.kernel') {
@@ -569,6 +610,12 @@ export class AppHost {
         await this.probe(inst, path, 'read')
         return d.transfer.exportPath(path, (args[1] ?? {}) as { saveAs?: boolean })
       }
+      case 'host.runtime':
+        // the standard process every UI app runs as; a package of a UI project carries a copy so it runs once installed
+        return hostSource
+      case 'host.origin':
+        // where this Pear is served: the base of an install link (`?install=`) that opens a package in it
+        return `${location.origin}${location.pathname}`
       case 'shell.open': {
         const [target, o] = args as [string, { app?: string }]
         await inst.call('launchOpen', [need<string>(target, 'target'), o ?? {}])
