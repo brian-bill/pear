@@ -10,6 +10,18 @@ interface PearAlertOptions { title?: string; message: string; detail?: string; b
 interface PearPickOptions { title?: string; startIn?: string; button?: string; filters?: Array<{ name: string; ext: string[] }>; multiple?: boolean }
 interface PearMenuItem { label?: string; shortcut?: string; action?: () => void | Promise<void>; disabled?: boolean; checked?: boolean; separator?: boolean }
 
+interface PearNetStatus { online: boolean; effectiveType?: string; downlink?: number; saveData?: boolean }
+type PearNetInit = RequestInit & { /** http(s) base URL or root-relative path for this one request */ proxy?: string; /** ms, default 30000 */ timeout?: number }
+interface PearNet {
+  /** fetch, proxied through the network service (needs the "network" permission in manifest.json). HTTP errors are responses. */
+  fetch(input: string | URL | Request, init?: PearNetInit): Promise<Response>
+  status(): Promise<PearNetStatus>
+  subscribe(fn: (e: { type: 'online' | 'offline' | 'connection'; status: Promise<PearNetStatus> }) => void): () => void
+  /** Save url to dest (the app's container or ~/Downloads). */
+  download(url: string, dest: string, init?: RequestInit): Promise<{ id: number; status: number; total: number | null }>
+  upload(path: string, url: string, init?: RequestInit): Promise<Response>
+}
+
 interface PearApi {
   /** Resolves when the window is connected to Desktop. */
   ready: Promise<unknown>
@@ -64,6 +76,9 @@ interface PearApi {
     notify(title: string, body?: string): Promise<number>
     contextMenu(items: PearMenuItem[], at: { x: number; y: number }): Promise<void>
   }
+  net: PearNet
+  /** Request/reply to a system service, e.g. service('tiny.network', {op: 'status'}). */
+  service<T = unknown>(name: string, msg: Record<string, unknown>, timeout?: number): Promise<T>
   /** Subscribe to Desktop events such as 'theme'. Returns an unsubscribe function. */
   on(name: string, fn: (data?: any) => unknown): () => void
   readonly theme: PearTheme
@@ -73,4 +88,6 @@ interface PearApi {
 
 /** The Pear API, available to every app window. */
 declare var tiny: PearApi
+/** Networking, the same object as tiny.net. */
+declare var net: PearNet
 `

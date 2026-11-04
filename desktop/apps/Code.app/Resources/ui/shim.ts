@@ -74,6 +74,46 @@ export function previewShim(): void {
     throw Object.assign(new Error(`${name} is not available in the preview`), { name: 'SysError', code: 'EPERM' })
   }
 
+
+  // Networking: `net` as in the SDK (contracts/network.md), served by Code's `network` permission through the `service` call.
+  type NetReply = { status: number; statusText: string; headers: Record<string, string> | Array<[string, string]>; url: string; redirected: boolean; body: Uint8Array }
+  const netInit = async (init?: RequestInit & { proxy?: string; timeout?: number }): Promise<Record<string, unknown> | undefined> => {
+    if (!init) return undefined
+    const { body, headers, proxy: _p, timeout: _t, signal: _s, ...rest } = init
+    const out: Record<string, unknown> = { ...rest }
+    if (headers) out.headers = Object.fromEntries(new Headers(headers).entries())
+    if (body !== undefined && body !== null) out.body = typeof body === 'string' || body instanceof Uint8Array ? body : new Uint8Array(await new Response(body).arrayBuffer())
+    return out
+  }
+  const netHeaders = (h: NetReply['headers']) => new Headers(Array.isArray(h) ? h : Object.entries(h ?? {}))
+  const net = {
+    async fetch(input: string | URL | Request, init?: RequestInit & { proxy?: string; timeout?: number }): Promise<Response> {
+      const req = input instanceof Request ? input : null
+      const merged = req ? { method: req.method, headers: req.headers, body: req.method === 'GET' || req.method === 'HEAD' ? undefined : new Uint8Array(await req.arrayBuffer()), ...init } : init
+      const r = await call<NetReply>('service', 'tiny.network', { op: 'fetch', url: req ? req.url : String(input), init: await netInit(merged), timeout: init?.timeout, proxy: init?.proxy })
+      const res = new Response([101, 204, 205, 304].includes(r.status) ? null : (r.body as BodyInit), { status: r.status, statusText: r.statusText, headers: netHeaders(r.headers) })
+      Object.defineProperty(res, 'url', { value: r.url })
+      Object.defineProperty(res, 'redirected', { value: r.redirected })
+      return res
+    },
+    status: () => call<unknown>('service', 'tiny.network', { op: 'status' }),
+    subscribe(fn: (e: { type: string; status: Promise<unknown> }) => void): () => void {
+      const mk = (type: string) => () => fn({ type, status: net.status() })
+      const on = mk('online'), off = mk('offline')
+      addEventListener('online', on)
+      addEventListener('offline', off)
+      return () => (removeEventListener('online', on), removeEventListener('offline', off))
+    },
+    async download(url: string, dest: string, init?: RequestInit) {
+      return call('service', 'tiny.network', { op: 'download', url, dest, init: await netInit(init) })
+    },
+    async upload(path: string, url: string, init?: RequestInit): Promise<Response> {
+      const r = await call<NetReply>('service', 'tiny.network', { op: 'upload', path, url, init: await netInit(init) })
+      return new Response(r.body as BodyInit, { status: r.status, statusText: r.statusText, headers: netHeaders(r.headers) })
+    },
+  }
+  w.net = net
+
   const tiny: Record<string, unknown> = {
     ready: call<{ theme: unknown }>('preview.init').then((init) => {
       theme = init.theme
@@ -123,6 +163,7 @@ export function previewShim(): void {
       exportPath: (p: string, o: unknown) => call('host.exportPath', p, o),
     },
     service: (name: string, msg: unknown) => call('service', name, msg),
+    net,
     on,
     get theme() {
       return theme

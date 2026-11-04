@@ -335,8 +335,71 @@ function service<T = unknown>(name: string, msg: Record<string, unknown>, timeou
   return call<T>('service', name, msg, timeout)
 }
 
+
+// ---- networking: the `tiny.network` service as the browser-shaped `net` object (contracts/network.md). The window itself
+// has no network; every request goes through the system service, which needs the `network` permission in the manifest.
+
+type NetReply = { status: number; statusText: string; headers: Record<string, string> | Array<[string, string]>; url: string; redirected: boolean; body: Uint8Array }
+export interface NetStatus { online: boolean; effectiveType?: string; downlink?: number; saveData?: boolean }
+
+async function netBody(init?: RequestInit & { proxy?: string; timeout?: number }): Promise<Record<string, unknown> | undefined> {
+  if (!init) return undefined
+  const { body, headers, proxy: _p, timeout: _t, signal: _s, ...rest } = init as RequestInit & { proxy?: string; timeout?: number }
+  const out: Record<string, unknown> = { ...rest }
+  if (headers) out.headers = Object.fromEntries(new Headers(headers as HeadersInit).entries())
+  if (body !== undefined && body !== null) {
+    if (typeof body === 'string') out.body = body
+    else if (body instanceof Uint8Array) out.body = body
+    else out.body = new Uint8Array(await new Response(body as BodyInit).arrayBuffer())
+  }
+  return out
+}
+
+const net = {
+  /** `fetch`, proxied through the network service. Resolves to a standard `Response`. HTTP error statuses are responses, not exceptions. */
+  async fetch(input: string | URL | Request, init?: RequestInit & { proxy?: string; timeout?: number }): Promise<Response> {
+    const req = input instanceof Request ? input : null
+    const url = req ? req.url : String(input)
+    const merged = req ? { method: req.method, headers: req.headers, body: req.method === 'GET' || req.method === 'HEAD' ? undefined : await req.arrayBuffer().then((b) => new Uint8Array(b)), ...init } : init
+    const r = await service<NetReply>('tiny.network', { op: 'fetch', url, init: await netBody(merged), timeout: init?.timeout, proxy: init?.proxy }, (init?.timeout ?? 30_000) + 3000)
+    const headers = new Headers(Array.isArray(r.headers) ? r.headers : Object.entries(r.headers ?? {}))
+    const nullBody = [101, 204, 205, 304].includes(r.status)
+    const res = new Response(nullBody ? null : (r.body as BodyInit), { status: r.status, statusText: r.statusText, headers })
+    Object.defineProperty(res, 'url', { value: r.url })
+    Object.defineProperty(res, 'redirected', { value: r.redirected })
+    return res
+  },
+  /** `{online, effectiveType?, downlink?, saveData?}` */
+  status: () => service<NetStatus>('tiny.network', { op: 'status' }),
+  /** Calls `fn` when the connection goes online or offline, or changes. Returns an unsubscribe function. */
+  subscribe(fn: (e: { type: 'online' | 'offline' | 'connection'; status: Promise<NetStatus> }) => void): () => void {
+    const conn = (navigator as unknown as { connection?: EventTarget }).connection
+    const mk = (type: 'online' | 'offline' | 'connection') => () => fn({ type, status: net.status() })
+    const on = mk('online'), off = mk('offline'), change = mk('connection')
+    addEventListener('online', on)
+    addEventListener('offline', off)
+    conn?.addEventListener('change', change)
+    return () => {
+      removeEventListener('online', on)
+      removeEventListener('offline', off)
+      conn?.removeEventListener('change', change)
+    }
+  },
+  /** Download `url` to `dest` (your container or ~/Downloads). Resolves when the file is complete. */
+  async download(url: string, dest: string, init?: RequestInit): Promise<{ id: number; status: number; total: number | null }> {
+    return service('tiny.network', { op: 'download', url, dest, init: await netBody(init) }, 10 * 60_000)
+  },
+  /** Send the file at `path` to `url`. */
+  async upload(path: string, url: string, init?: RequestInit): Promise<Response> {
+    const r = await service<NetReply>('tiny.network', { op: 'upload', path, url, init: await netBody(init) }, 5 * 60_000)
+    return new Response(r.body as BodyInit, { status: r.status, statusText: r.statusText, headers: new Headers(Array.isArray(r.headers) ? r.headers : Object.entries(r.headers ?? {})) })
+  },
+}
+export { net }
+
 const extras = {
   ready,
+  net,
   window: windowApi,
   app: appApi,
   dialogs,
@@ -365,6 +428,7 @@ export const tiny = new Proxy({} as Calls, {
   shell: typeof shell
   admin: typeof admin
   system: typeof system
+  net: typeof net
   service: typeof service
   on: typeof on
   theme: ThemeInfo

@@ -118,7 +118,7 @@ export function manifestFor(name: string): string {
       icon: 'Resources/icon.svg',
       ui: 'Resources/ui/index.html',
       window: { width: 480, height: 320, minWidth: 240, minHeight: 160 },
-      permissions: ['fs.user'],
+      permissions: ['fs.user', 'network'],
     },
     null,
     2,

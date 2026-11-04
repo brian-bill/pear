@@ -75,6 +75,10 @@ Everything a Vanilla process can do (`contracts/filesystem.md`, `configuration.m
 
 Request/reply to a system service as this app: `tiny.service('tiny.search', {op: 'query', q: 'report'})`, `tiny.service('tiny.clipboard', ...)`, `tiny.service('tiny.notifications', {op: 'post', title, body})`, `tiny.service('tiny.settings', ...)`, `tiny.service('tiny.network', {op: 'fetch', url})`, `tiny.service('tiny.audio', ...)`. The request set of each service is in `contracts/*.md` ("Implementation status"). `tiny.system.info('snapshot')` is shorthand for `tiny.system` reads.
 
+### Network: `net` (needs the `network` permission)
+
+`net.fetch(url, init?)` -> standard `Response` (HTTP errors are responses; offline is `ENETUNREACH`, a browser-blocked request is `EACCES`), `net.status()`, `net.subscribe(fn)` (online/offline/connection), `net.download(url, destPath)` (to your container or `~/Downloads`), `net.upload(path, url, init?)`. Also `tiny.net`. `fetch` also takes `proxy` and `timeout`. Windows have no network of their own, so plain `fetch()` in an app does not work; use `net.fetch`. WebSockets and download progress events are not available from windows yet (they need a port); call `tiny.service('tiny.network', ...)` for the rest of `contracts/network.md`.
+
 ### Windows: `tiny.window`
 
 `setTitle(t)`, `setMenus(menus)`, `close()`, `minimize()`, `toggleMaximize()`, `focus()`, `resize(w, h)`, `setEdited(bool)` (dot in the close button), `onCloseRequest(fn)` (return `false` to keep the window open; ask the user first), `list()`.

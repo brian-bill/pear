@@ -13,7 +13,8 @@
   },
   "permissions": [
     "fs.user",
-    "clipboard"
+    "clipboard",
+    "network"
   ],
   "minify": true
 }
