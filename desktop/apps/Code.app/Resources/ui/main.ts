@@ -9,6 +9,11 @@ import { AUTO, THEMES, applyTheme, currentPalette, themeChoice } from './themes'
 import type { ExtActions, ExtHost, ExtensionDef, ToolbarButton } from './extension'
 import * as debugConsole from './debugconsole'
 import * as share from './share'
+import * as vsx from './vsxui'
+import * as palette from './palette'
+import { DEFAULT_KEYS, chordOf, createKeymap, display, isMac, parseKey, type Context, type Keymap } from './keys'
+import { parseJsonc } from './vsx'
+import type { MenuDef } from '@tiny/sdk'
 import { KIND_LABEL, defaultKind, jsonToggleAll, render as renderPreview, type PreviewKind } from './previews'
 import { previewExtension, togglePreview } from './preview'
 import { TEMPLATES, instantiate, type TemplateDef } from './templates'
@@ -22,6 +27,11 @@ const treeEl = $('tree')
 const tabsEl = $('tabs')
 const editorsEl = $('editors')
 const welcomeEl = $('welcome')
+const extDetail = $('extDetail')
+
+/** Tabs that are not files: an extension's details page is `ext://publisher.name`. */
+const EXT_TAB = 'ext://'
+const isVirtual = (path: string | null): boolean => !!path && path.startsWith(EXT_TAB)
 const outputEl = $('output')
 const outLog = $('outlog')
 const stState = $('stState')
@@ -33,7 +43,6 @@ const extView = $('extView')
 const tabFiles = $('tabFiles')
 const tabExt = $('tabExt')
 const extButtons = $('extButtons')
-const extList = $('extensions')
 const breadcrumbsEl = $('breadcrumbs')
 const secTitle = $('secTitle')
 const explorerEmpty = $('explorerEmpty')
@@ -88,7 +97,6 @@ let dirtySeen = new Set<string>()
 let statusTimer: ReturnType<typeof setTimeout> | null = null
 
 const extensions: ExtensionDef[] = [previewExtension, assemblyScriptExtension]
-let disabled = new Set<string>()
 const actions = new Map<string, ExtActions>()
 
 // ---- the extension host
@@ -133,25 +141,17 @@ function status(text: string): void {
 }
 
 // ---- extensions
-async function loadDisabled(): Promise<void> {
-  const list = await tiny.configGet(CONFIG, 'disabledExtensions', [])
-  disabled = new Set(Array.isArray(list) ? (list as string[]) : [])
-}
-
 function activateExtensions(): void {
   for (const ext of extensions) {
-    if (disabled.has(ext.id) || actions.has(ext.id)) continue
+    if (actions.has(ext.id)) continue
     actions.set(ext.id, ext.activate(extHost))
   }
-  for (const id of disabled.keys()) actions.delete(id)
   renderToolbar()
-  renderExtensions()
 }
 
 function renderToolbar(): void {
   extButtons.replaceChildren()
   for (const ext of extensions) {
-    if (disabled.has(ext.id)) continue
     for (const button of actions.get(ext.id)?.toolbar ?? []) {
       if (!button.visible()) continue
       const el = document.createElement('button')
@@ -162,54 +162,6 @@ function renderToolbar(): void {
       el.addEventListener('click', button.run)
       extButtons.append(el)
     }
-  }
-}
-
-function renderExtensions(): void {
-  extList.replaceChildren()
-  const query = extSearch.value.trim().toLowerCase()
-  const shown = extensions.filter((e) => !query || `${e.name} ${e.description}`.toLowerCase().includes(query))
-  extCount.textContent = String(shown.length)
-  if (!shown.length) {
-    const none = document.createElement('div')
-    none.className = 'extempty'
-    none.textContent = 'No extensions found.'
-    extList.append(none)
-    return
-  }
-  for (const ext of shown) {
-    const card = document.createElement('div')
-    card.className = 'extcard'
-    const art = document.createElement('div')
-    art.className = 'exticon'
-    art.innerHTML = icon(ext.id.includes('assembly') || ext.id.includes('asm') ? 'package' : 'eye', 24)
-    const body = document.createElement('div')
-    body.className = 'body'
-    const top = document.createElement('div')
-    top.className = 'top'
-    top.innerHTML = `<span class="name">${escapeHtml(ext.name)}</span>${ext.tag ? `<span class="tag">${escapeHtml(ext.tag)}</span>` : ''}`
-    const desc = document.createElement('div')
-    desc.className = 'desc'
-    desc.textContent = ext.description
-    const foot = document.createElement('div')
-    foot.className = 'foot'
-    const label = document.createElement('label')
-    label.textContent = 'Enabled'
-    const sw = document.createElement('input')
-    sw.type = 'checkbox'
-    sw.className = 'switch'
-    sw.checked = !disabled.has(ext.id)
-    sw.addEventListener('change', () => {
-      if (sw.checked) disabled.delete(ext.id)
-      else disabled.add(ext.id)
-      void tiny.configSet(CONFIG, 'disabledExtensions', [...disabled])
-      activateExtensions()
-    })
-    label.append(sw)
-    foot.append(label)
-    body.append(top, desc, foot)
-    card.append(art, body)
-    extList.append(card)
   }
 }
 
@@ -414,10 +366,12 @@ function renderTabs(): void {
     tab.title = path
     const glyph = document.createElement('span')
     glyph.className = 'glyph'
-    glyph.innerHTML = fileIcon(basename(path), 'file')
+    const virtual = isVirtual(path)
+    glyph.innerHTML = virtual ? icon('extensions', 16) : fileIcon(basename(path), 'file')
     const label = document.createElement('span')
     label.className = 'tablabel'
-    label.textContent = basename(path)
+    label.textContent = virtual ? `Extension: ${vsx.detailTitle(path.slice(EXT_TAB.length))}` : basename(path)
+    if (virtual) tab.title = label.textContent
     const close = document.createElement('button')
     close.className = 'close'
     if (pinned) {
@@ -444,21 +398,22 @@ function renderTabs(): void {
     })
     tab.addEventListener('contextmenu', (e) => {
       e.preventDefault()
-      void tabMenu(path, e.clientX, e.clientY)
+      if (virtual) void tiny.shell.contextMenu([{ label: 'Close', action: () => void closeTab(path) }], { x: e.clientX, y: e.clientY })
+      else void tabMenu(path, e.clientX, e.clientY)
     })
     tab.append(glyph, label, close)
     tabsEl.append(tab)
   }
   tabsEl.querySelector('.tab[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-  saveBtn.disabled = !active
+  saveBtn.disabled = !active || isVirtual(active)
   renderBreadcrumbs()
   scheduleMenus()
 }
 
 function renderBreadcrumbs(): void {
   breadcrumbsEl.replaceChildren()
-  breadcrumbsEl.hidden = !active
-  if (!active) return
+  breadcrumbsEl.hidden = !active || isVirtual(active)
+  if (!active || isVirtual(active)) return
   const parts = active.split('/')
   parts.forEach((part, i) => {
     if (i) {
@@ -478,12 +433,14 @@ function renderBreadcrumbs(): void {
 /** Close one tab, asking first when it has changes that were never written. Resolves false if the user kept it open. */
 async function closeTab(path: string): Promise<boolean> {
   if (editor.isDirty(path) && !(await tiny.dialogs.confirm(`Discard unsaved changes to ${basename(path)}?`))) return false
-  editor.close(path)
-  void loadBackground(path)
+  if (!isVirtual(path)) {
+    editor.close(path)
+    void loadBackground(path)
+  }
   open = open.filter((p) => p !== path)
   pins.delete(path)
   previewChoice.delete(path)
-  closedStack.push(path)
+  if (!isVirtual(path)) closedStack.push(path)
   if (active === path) active = open[open.length - 1] ?? null
   dirtySeen.delete(path)
   renderTabs()
@@ -627,6 +584,18 @@ function setFileStatus(rel: string | null): void {
 }
 
 function showActive(): void {
+  extDetail.hidden = true
+  vsx.hideDetail()
+  if (active && isVirtual(active)) {
+    hideImage()
+    welcomeEl.hidden = true
+    setFileStatus(null)
+    extDetail.hidden = false
+    vsx.showDetail(active.slice(EXT_TAB.length), extDetail)
+    renderTabs()
+    updateSidePreview()
+    return
+  }
   if (!active) {
     hideImage()
     updateSidePreview()
@@ -900,7 +869,7 @@ function saveFile(path: string, quiet = false): Promise<void> {
   return run
 }
 
-const save = (): Promise<void> => (active ? saveFile(active) : Promise.resolve())
+const save = (): Promise<void> => (active && !isVirtual(active) ? saveFile(active) : Promise.resolve())
 const saveAll = (): Promise<void> => Promise.all(editor.allDirty().map((p) => saveFile(p))).then(() => undefined)
 
 // ---- auto save: After Delay (the default), On Focus Change, or Off
@@ -972,6 +941,7 @@ async function openProject(path: string): Promise<void> {
   await tiny.configSet(CONFIG, 'lastProject', project)
   tiny.app.stateChanged()
   status('Ready')
+  void vsx.projectChanged().then(setMenus)
 }
 
 function closeProject(): void {
@@ -996,6 +966,7 @@ function closeProject(): void {
   renderTree()
   renderToolbar()
   for (const a of actions.values()) a.onDidCloseProject?.()
+  void vsx.projectChanged().then(setMenus)
 }
 
 async function newProject(at: { x: number; y: number }): Promise<void> {
@@ -1047,7 +1018,7 @@ function scheduleMenus(): void {
 }
 
 function setMenus(): void {
-  void tiny.window.setMenus([
+  const menus: MenuDef[] = [
     {
       title: 'Code',
       items: [{ label: 'About Code', action: () => void tiny.dialogs.alert({ title: 'Code', message: 'Write Pear apps in Pear: HTML, CSS, JavaScript and WebAssembly, previewed live. Everything runs client-side.' }) }],
@@ -1058,24 +1029,27 @@ function setMenus(): void {
         { label: 'New Project…', shortcut: 'Cmd+Shift+N', action: () => void newProject({ x: 200, y: 40 }) },
         { label: 'Open Project…', shortcut: 'Cmd+O', action: () => void openProjectDialog() },
         { separator: true },
-        { label: 'Save', shortcut: 'Cmd+S', action: () => void save(), disabled: !active },
+        { label: 'Save', shortcut: 'Cmd+S', action: () => void save(), disabled: !active || isVirtual(active) },
         { label: 'Save All', shortcut: 'Cmd+Alt+S', action: () => void saveAll(), disabled: editor.allDirty().length === 0 },
         { separator: true },
         ...(['afterDelay', 'onFocusChange', 'off'] as AutoSave[]).map((m) => ({ label: `Auto Save: ${AUTO_SAVE_LABEL[m]}`, checked: autoSave === m, action: () => setAutoSave(m) })),
         { separator: true },
         { label: 'Close Project', action: closeProject, disabled: !project },
+        { separator: true },
+        { label: 'Close Editor', shortcut: 'Cmd+W', action: () => void execute('workbench.action.closeActiveEditor') },
+        { label: 'Close Window', shortcut: 'Cmd+Shift+W', action: () => void execute('workbench.action.closeWindow') },
       ],
     },
     {
       title: 'Edit',
       items: [
-        { label: 'Find', action: () => editor.run('actions.find'), disabled: !active },
-        { label: 'Replace', action: () => editor.run('editor.action.startFindReplace'), disabled: !active },
+        { label: 'Find', action: () => editor.run('actions.find'), disabled: !active || isVirtual(active) },
+        { label: 'Replace', action: () => editor.run('editor.action.startFindReplace'), disabled: !active || isVirtual(active) },
         { separator: true },
-        { label: 'Format Document', action: () => editor.run('editor.action.formatDocument'), disabled: !active },
-        { label: 'Toggle Line Comment', action: () => editor.run('editor.action.commentLine'), disabled: !active },
-        { label: 'Go to Symbol…', action: () => editor.run('editor.action.quickOutline'), disabled: !active },
-        { label: 'Go to Line…', action: () => editor.run('editor.action.gotoLine'), disabled: !active },
+        { label: 'Format Document', action: () => editor.run('editor.action.formatDocument'), disabled: !active || isVirtual(active) },
+        { label: 'Toggle Line Comment', action: () => editor.run('editor.action.commentLine'), disabled: !active || isVirtual(active) },
+        { label: 'Go to Symbol…', action: () => editor.run('editor.action.quickOutline'), disabled: !active || isVirtual(active) },
+        { label: 'Go to Line…', action: () => editor.run('editor.action.gotoLine'), disabled: !active || isVirtual(active) },
       ],
     },
     {
@@ -1087,10 +1061,42 @@ function setMenus(): void {
         { label: 'Reload Preview', shortcut: 'Cmd+R', action: () => $('prevReload').click() },
         { label: 'Toggle Output', shortcut: 'Cmd+Y', action: () => (outputEl.hidden = !outputEl.hidden) },
         { separator: true },
+        { label: 'Command Palette…', hint: hint('workbench.action.showCommands'), action: () => void execute('workbench.action.showCommands') },
+        { label: 'Toggle Primary Side Bar', hint: hint('workbench.action.toggleSidebarVisibility'), action: () => void execute('workbench.action.toggleSidebarVisibility') },
+        { label: 'Toggle Panel', hint: hint('workbench.action.togglePanel'), action: () => void execute('workbench.action.togglePanel') },
+        { label: 'Toggle Word Wrap', hint: hint('editor.action.toggleWordWrap'), action: () => void execute('editor.action.toggleWordWrap') },
+        { separator: true },
         { label: 'Show Files', shortcut: 'Cmd+0', action: () => void switchSide(true) },
         { label: 'Show Extensions', shortcut: 'Cmd+Shift+X', action: () => void switchSide(false) },
         { separator: true },
         { label: 'Color Theme…', action: () => themeMenu({ x: 260, y: 60 }) },
+        { separator: true },
+        { label: 'Keyboard Shortcuts', hint: hint('workbench.action.openGlobalKeybindings'), action: () => void execute('workbench.action.openGlobalKeybindings') },
+        { label: 'Keyboard Shortcuts (JSON)', action: () => void execute('workbench.action.openGlobalKeybindingsFile') },
+      ],
+    },
+    {
+      title: 'Go',
+      items: [
+        { label: 'Go to File…', hint: hint('workbench.action.quickOpen'), action: () => void execute('workbench.action.quickOpen'), disabled: !project },
+        { label: 'Go to Line/Column…', hint: hint('workbench.action.gotoLine'), action: () => void execute('workbench.action.gotoLine'), disabled: !active || isVirtual(active) },
+        { label: 'Go to Symbol in Editor…', hint: hint('workbench.action.gotoSymbol'), action: () => void execute('workbench.action.gotoSymbol'), disabled: !active || isVirtual(active) },
+        { separator: true },
+        { label: 'Next Editor', hint: hint('workbench.action.nextEditor'), action: () => void execute('workbench.action.nextEditor'), disabled: open.length < 2 },
+        { label: 'Previous Editor', hint: hint('workbench.action.previousEditor'), action: () => void execute('workbench.action.previousEditor'), disabled: open.length < 2 },
+        { label: 'Reopen Closed Editor', hint: hint('workbench.action.reopenClosedEditor'), action: () => void execute('workbench.action.reopenClosedEditor'), disabled: closedStack.length === 0 },
+      ],
+    },
+    {
+      title: 'Extensions',
+      items: [
+        { label: 'Install Extension from VSIX…', action: () => void vsx.installVsixDialog() },
+        { label: 'Install Extension from Location…', action: () => void vsx.installFolderDialog() },
+        { label: 'Update Extensions', action: () => void vsx.updateAll() },
+        { separator: true },
+        { label: 'Run Extension Command…', action: () => vsx.commandMenu({ x: 260, y: 60 }) },
+        { label: 'Trust This Workspace', action: () => void vsx.trustWorkspace(), disabled: !project || vsx.isTrusted() },
+        { label: 'Use Restricted Mode', action: () => void vsx.restrictWorkspace(), disabled: !project || !vsx.isTrusted() },
       ],
     },
     {
@@ -1103,7 +1109,14 @@ function setMenus(): void {
         { label: 'Check Project…', action: () => void share.checkProject(project!), disabled: !project },
       ],
     }
-  ])
+  ]
+  // remember which keys the menus own, so the keymap leaves them to the SDK instead of running them twice
+  menuKeys.clear()
+  for (const m of menus) for (const i of m.items) {
+    const chords = typeof i.shortcut === 'string' ? parseKey(i.shortcut.replace(/⌘/g, 'Cmd+').replace(/\+\+/g, '+'), true) : null
+    if (chords?.length === 1) menuKeys.add(chords[0]!)
+  }
+  void tiny.window.setMenus(menus)
 }
 
 async function openProjectDialog(): Promise<void> {
@@ -1112,19 +1125,38 @@ async function openProjectDialog(): Promise<void> {
   if (picked?.[0]) await openProject(picked[0])
 }
 
-async function switchSide(files: boolean): Promise<void> {
-  filesView.hidden = !files
-  extView.hidden = files
-  tabFiles.setAttribute('aria-pressed', String(files))
-  tabExt.setAttribute('aria-pressed', String(!files))
+/** The side bar shows one view: Files, Extensions, or a container an extension contributed (its id). */
+let sideView: string = 'files'
+function setSide(which: string): void {
+  sideView = which
+  filesView.hidden = which !== 'files'
+  extView.hidden = which !== 'ext'
+  tabFiles.setAttribute('aria-pressed', String(which === 'files'))
+  tabExt.setAttribute('aria-pressed', String(which === 'ext'))
+  for (const el of document.querySelectorAll<HTMLElement>('[data-vsx-container]')) {
+    const on = el.dataset.vsxContainer === which
+    if (el.classList.contains('actitem')) el.setAttribute('aria-pressed', String(on))
+    else el.hidden = !on
+  }
+  if (which === 'ext') vsx.viewShown()
   editor.layout()
+}
+
+async function switchSide(files: boolean): Promise<void> {
+  setSide(files ? 'files' : 'ext')
 }
 
 // ---- colour theme
 const hostDark = (): boolean => document.documentElement.dataset.theme === 'dark'
 
-function setTheme(id: string): void {
+/** Apply the chosen theme: a built-in palette drives the workbench and Monaco; an extension theme colours Monaco on top of the current palette. */
+function applyChoice(id: string): void {
   syncTheme(applyTheme(id, hostDark()))
+  if (id.startsWith('vsx:')) vsx.setExtensionTheme(id)
+}
+
+function setTheme(id: string): void {
+  applyChoice(id)
   void tiny.configSet(CONFIG, 'colorTheme', id)
 }
 
@@ -1136,9 +1168,217 @@ function themeMenu(at: { x: number; y: number }): void {
       ...THEMES.map((t) => ({ label: mark(chosen === t.id) + t.label, action: () => setTheme(t.id) })),
       { separator: true },
       { label: mark(chosen === AUTO) + 'Match Pear Appearance', action: () => setTheme(AUTO) },
+      ...(vsx.extensionThemes().length ? [{ separator: true }, ...vsx.extensionThemes().map((t) => ({ label: mark(chosen === t.id) + `${t.label} (extension)`, action: () => setTheme(t.id) }))] : []),
     ],
     at,
   )
+}
+
+
+// ---- commands and keybindings (contracts/code-extensions.md; keys follow VS Code's defaults)
+interface Command { title: string; run(args?: unknown): unknown; hidden?: boolean }
+const commands = new Map<string, Command>()
+const reg = (id: string, title: string, run: Command['run'], hidden = false): void => void commands.set(id, { title, run, hidden })
+let keymap = undefined as unknown as Keymap // set by initKeys() at boot
+let treeFocus = false
+/** Keys that menu items own (the SDK runs those itself), as canonical chords. */
+const menuKeys = new Set<string>()
+let sideHidden = false
+
+function keyContext(): Context {
+  const a = document.activeElement as HTMLElement | null
+  const inEditor = !!a?.closest('.monaco-editor')
+  const input = !!a && !inEditor && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)
+  return { editorTextFocus: inEditor, inputFocus: inEditor || input, explorerViewletFocus: treeFocus, hasProject: !!project, sideBarVisible: !sideHidden, panelVisible: !outputEl.hidden, activeEditor: !!active, sideBar: sideView }
+}
+
+/** Run a command by id: the workbench's, then Monaco's (`editor.action.*`), then an extension's. */
+async function execute(id: string, args?: unknown): Promise<void> {
+  const c = commands.get(id)
+  try {
+    if (c) await c.run(args)
+    else if (editor.actions().some((a) => a.id === id)) editor.run(id)
+    else await vsx.runExtensionCommand(id)
+  } catch (e) {
+    status((e as Error).message)
+  }
+}
+
+function toggleSidebar(): void {
+  sideHidden = !sideHidden
+  $('side').style.display = sideHidden ? 'none' : ''
+  $('sashSide').style.display = sideHidden ? 'none' : ''
+  editor.layout()
+}
+
+function cycleEditor(step: number): void {
+  if (open.length < 2) return
+  const at = Math.max(0, open.indexOf(active ?? ''))
+  const next = open[(at + step + open.length) % open.length]!
+  saveOnLeave(next)
+  active = next
+  showActive()
+}
+
+function openEditorAt(n: number): void {
+  const target = n >= 9 ? open[open.length - 1] : open[n - 1]
+  if (!target) return
+  saveOnLeave(target)
+  active = target
+  showActive()
+}
+
+async function listProjectFiles(): Promise<string[]> {
+  if (!project) return []
+  const files: string[] = []
+  const scan = async (rel: string, depth: number): Promise<void> => {
+    if (depth > 8 || files.length >= 5000) return
+    for (const e of await tiny.readdir(rel ? joinPath(project!, rel) : project!).catch(() => [])) {
+      if (e.name.startsWith('.') || e.name === 'node_modules') continue
+      const child = rel ? `${rel}/${e.name}` : e.name
+      if (e.kind === 'dir') await scan(child, depth + 1)
+      else files.push(child)
+    }
+  }
+  await scan('', 0)
+  const rank = (p: string): number => (open.includes(p) ? open.length - open.indexOf(p) : 0)
+  return files.sort((a, b) => rank(b) - rank(a) || a.localeCompare(b))
+}
+
+const hint = (id: string): string => keymap?.hint(id) ?? ''
+const refocus = (): void => {
+  if (active && !isVirtual(active)) editor.focus()
+}
+
+const paletteSource = (files: string[] = []): palette.PaletteSource => ({
+  commands: () => [
+    ...[...commands].filter(([, c]) => !c.hidden).map(([id, c]) => ({ label: c.title, description: id.startsWith('workbench') ? undefined : id, keys: hint(id), run: () => void execute(id) })),
+    ...vsx.extensionCommands().map((c) => ({ label: c.title, description: c.ext, keys: hint(c.command), run: () => void execute(c.command) })),
+    ...editor.actions().filter((a) => !commands.has(a.id)).map((a) => ({ label: a.label, description: 'Editor', keys: hint(a.id), run: () => void execute(a.id) })),
+  ],
+  files: () => files.map((rel) => ({ label: basename(rel), description: dirname(rel) === '.' ? '' : dirname(rel), run: () => void openFile(rel) })),
+  shortcuts: () => {
+    const title = (id: string): string => commands.get(id)?.title ?? editor.actions().find((a) => a.id === id)?.label ?? vsx.extensionCommands().find((c) => c.command === id)?.title ?? id
+    const bound = keymap.all().map((b) => ({ label: title(b.command), description: `${b.command}${b.when ? `  when ${b.when}` : ''}${b.source === 'default' ? '' : `  (${b.source})`}`, keys: display(b.chords, mac()), run: () => void execute(b.command, b.args) }))
+    const have = new Set(keymap.all().map((b) => b.command))
+    const unbound = [...commands].filter(([id, c]) => !c.hidden && !have.has(id)).map(([id, c]) => ({ label: c.title, description: id, keys: '', run: () => void execute(id) }))
+    return [...bound, ...unbound]
+  },
+  gotoLine: (line) => {
+    editor.revealLine(line)
+  },
+  gotoSymbol: () => editor.run('editor.action.quickOutline'),
+})
+
+const mac = (): boolean => isMac(tiny.platform || navigator.platform)
+
+async function userKeybindingsPath(): Promise<string> {
+  return joinPath((await tiny.getenv('HOME')) || '/Users/pear', 'Library/Application Support/Code/User/keybindings.json')
+}
+
+async function loadUserKeybindings(): Promise<void> {
+  try {
+    const parsed = parseJsonc<unknown>(textOf(await tiny.readFile(await userKeybindingsPath())))
+    keymap.set('user', Array.isArray(parsed) ? parsed.filter((k) => k && typeof k.key === 'string' && typeof k.command === 'string') : [])
+  } catch {
+    keymap.set('user', []) // none yet, or not valid JSON: the defaults stand
+  }
+}
+
+function registerCommands(): void {
+  reg('workbench.action.showCommands', 'Show All Commands', () => palette.open(paletteSource(), 'commands', refocus))
+  reg('workbench.action.quickOpen', 'Go to File…', async () => palette.open(paletteSource(await listProjectFiles()), 'files', refocus))
+  reg('workbench.action.openGlobalKeybindings', 'Preferences: Open Keyboard Shortcuts', () => palette.open(paletteSource(), 'keys', refocus))
+  reg('workbench.action.openGlobalKeybindingsFile', 'Preferences: Open Keyboard Shortcuts (JSON)', async () => {
+    const path = await userKeybindingsPath()
+    if (!(await tiny.exists(path))) {
+      await tiny.mkdir(dirname(path), { recursive: true })
+      await tiny.writeFile(path, bytesOf('// Place your key bindings in this file to override the defaults.\n// [{ "key": "ctrlcmd+shift+k", "command": "workbench.action.showCommands" }, { "key": "ctrlcmd+b", "command": "-workbench.action.toggleSidebarVisibility" }]\n[]\n'))
+    }
+    await tiny.shell.reveal(path)
+  })
+  reg('workbench.action.reloadKeybindings', 'Preferences: Reload Keyboard Shortcuts', async () => {
+    await loadUserKeybindings()
+    status('Keyboard shortcuts reloaded')
+  })
+  reg('workbench.action.selectTheme', 'Preferences: Color Theme', () => themeMenu({ x: window.innerWidth / 2 - 100, y: 80 }))
+  reg('workbench.action.toggleSidebarVisibility', 'View: Toggle Primary Side Bar Visibility', toggleSidebar)
+  reg('workbench.action.togglePanel', 'View: Toggle Panel Visibility', () => (outputEl.hidden = !outputEl.hidden))
+  reg('workbench.action.output.toggleOutput', 'View: Toggle Output', () => {
+    outputEl.hidden = false
+    selectPanel('output')
+  })
+  reg('workbench.actions.view.problems', 'View: Toggle Problems', showProblems)
+  reg('workbench.debug.action.toggleRepl', 'Debug: Toggle Debug Console', showConsole)
+  reg('workbench.view.explorer', 'View: Show Explorer', () => {
+    if (sideHidden) toggleSidebar()
+    setSide('files')
+  })
+  reg('workbench.view.extensions', 'View: Show Extensions', () => {
+    if (sideHidden) toggleSidebar()
+    setSide('ext')
+  })
+  reg('markdown.showPreviewToSide', 'Preview: Toggle Preview to the Side', togglePreview)
+  reg('workbench.action.reloadPreview', 'Preview: Reload', () => $('prevReload').click())
+  reg('workbench.action.files.newUntitledFile', 'File: New File', () => createIn(selected && entries.get(selected)?.kind === 'dir' ? selected : dirname(selected ?? '') === '.' ? '' : dirname(selected ?? ''), 'file'))
+  reg('workbench.action.files.newProject', 'File: New Project…', () => void newProject({ x: window.innerWidth / 2 - 100, y: 80 }))
+  reg('workbench.action.files.openFolder', 'File: Open Project…', openProjectDialog)
+  reg('workbench.action.closeFolder', 'File: Close Project', closeProject)
+  reg('workbench.action.files.save', 'File: Save', () => save())
+  reg('workbench.action.files.saveAll', 'File: Save All', () => saveAll())
+  reg('workbench.action.closeActiveEditor', 'View: Close Editor', async () => {
+    if (active) await closeTab(active)
+    else tiny.window.close()
+  })
+  reg('workbench.action.closeWindow', 'File: Close Window', () => tiny.window.close())
+  reg('workbench.action.closeAllEditors', 'View: Close All Editors', () => closeMany(open.filter((p) => !pins.has(p))))
+  reg('workbench.action.closeOtherEditors', 'View: Close Other Editors', () => closeMany(open.filter((p) => p !== active && !pins.has(p))))
+  reg('workbench.action.reopenClosedEditor', 'View: Reopen Closed Editor', () => {
+    const last = closedStack.pop()
+    if (last) return openFile(last)
+  })
+  reg('workbench.action.nextEditor', 'View: Open Next Editor', () => cycleEditor(1))
+  reg('workbench.action.previousEditor', 'View: Open Previous Editor', () => cycleEditor(-1))
+  for (let n = 1; n <= 9; n++) reg(`workbench.action.openEditorAtIndex${n}`, `View: Open Editor at Index ${n}`, () => openEditorAt(n), true)
+  reg('workbench.action.tasks.build', 'Tasks: Run Build Task', buildShortcut)
+  reg('workbench.action.gotoLine', 'Go to Line/Column…', () => editor.run('editor.action.gotoLine'))
+  reg('workbench.action.gotoSymbol', 'Go to Symbol in Editor…', () => editor.run('editor.action.quickOutline'))
+  reg('editor.action.toggleWordWrap', 'View: Toggle Word Wrap', () => status(editor.toggleWordWrap() ? 'Word wrap: on' : 'Word wrap: off'))
+  reg('renameFile', 'Explorer: Rename', () => selected && renamePath(selected), true)
+  reg('deleteFile', 'Explorer: Delete', () => selected && deletePath(selected), true)
+  reg('extensions.installFromVSIX', 'Extensions: Install from VSIX…', vsx.installVsixDialog)
+  reg('extensions.installFromLocation', 'Extensions: Install from Location…', vsx.installFolderDialog)
+  reg('extensions.update', 'Extensions: Update Extensions', vsx.updateAll)
+  reg('workbench.trust.manage', 'Workspace: Trust This Workspace', vsx.trustWorkspace)
+  reg('workbench.trust.restrict', 'Workspace: Use Restricted Mode', vsx.restrictWorkspace)
+  reg('share.packageAndInstall', 'Share: Package & Install', () => project && share.packageAndInstall(project))
+  reg('share.checkProject', 'Share: Check Project…', () => project && share.checkProject(project))
+}
+
+function initKeys(): void {
+  keymap = createKeymap(mac(), (shown) => shown && status(shown))
+  keymap.set('default', DEFAULT_KEYS)
+  registerCommands()
+  editor.onWorkbenchKey = (id) => void execute(id)
+  document.addEventListener('pointerdown', (e) => void (treeFocus = !!(e.target as HTMLElement).closest('#tree')), true)
+  const onKey = (e: KeyboardEvent, inEditor: boolean): void => {
+    if (e.isComposing) return
+    const chord = chordOf(e)
+    // from the editor, the menus run first (the SDK listens before this one does): leave their keys alone
+    if (inEditor && chord && menuKeys.has(chord)) return
+    const hit = keymap.handle(e, keyContext())
+    if (!hit) return
+    e.preventDefault()
+    e.stopImmediatePropagation() // the SDK must not also run a menu item or hand the key to Desktop (Cmd+W closes the editor, not the window)
+    if (hit === 'pending') return
+    palette.close()
+    void execute(hit.run.command, hit.run.args)
+  }
+  const inMonaco = (e: Event): boolean => !!(e.target as HTMLElement | null)?.closest?.('.monaco-editor')
+  // Outside the editor the keymap goes first, so chords (Cmd+K Cmd+S) and Cmd+W reach it before any menu shortcut does.
+  window.addEventListener('keydown', (e) => !inMonaco(e) && onKey(e, false), true)
+  // Inside the editor Monaco goes first (its find, fold, multi-cursor...); the keys it does not use come here.
+  window.addEventListener('keydown', (e) => inMonaco(e) && onKey(e, true))
 }
 
 // ---- sashes: drag to resize the side bar, the output panel and the preview
@@ -1178,14 +1418,54 @@ void (async () => {
   await tiny.ready
   initLanguages()
   hydrateIcons()
+  // the Extensions view's sections (Installed, Commands, Marketplace) fold away with their arrow
+  for (const head of document.querySelectorAll<HTMLElement>('#extView .sechead.static')) {
+    head.tabIndex = 0
+    head.setAttribute('role', 'button')
+    head.setAttribute('aria-expanded', 'true')
+    const toggle = (): void => {
+      const folded = head.classList.toggle('collapsed')
+      head.setAttribute('aria-expanded', String(!folded))
+      head.querySelector('.chev')!.innerHTML = icon(folded ? 'chevron-right' : 'chevron-down', 16)
+    }
+    head.addEventListener('click', toggle)
+    head.addEventListener('keydown', (e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), toggle()))
+  }
   const savedTheme = await tiny.configGet(CONFIG, 'colorTheme', AUTO)
   syncTheme(applyTheme(typeof savedTheme === 'string' ? savedTheme : AUTO, hostDark()))
   // in "auto" the palette follows Pear's appearance
-  tiny.on('theme', () => syncTheme(applyTheme(themeChoice(), hostDark())))
-  await loadDisabled()
+  tiny.on('theme', () => applyChoice(themeChoice()))
   activateExtensions()
   renderTree()
   initSashes()
+  await vsx.init(
+    {
+      project: () => project,
+      log: (line, cls) => extHost.log(line, cls),
+      status,
+      openDetail: (id) => {
+        const tab = EXT_TAB + id
+        if (!open.includes(tab)) open.push(tab)
+        saveOnLeave(tab)
+        active = tab
+        showActive()
+      },
+      changed: () => {
+        keymap?.set('extension', vsx.extensionKeybindings())
+        if (themeChoice().startsWith('vsx:') && !vsx.setExtensionTheme(themeChoice())) applyChoice(AUTO)
+        setMenus()
+        if (active) showActive()
+      },
+    },
+    {
+      views: { nav: document.querySelector<HTMLElement>('.activitybar')!, side: $('side'), sash: $('sashSide'), explorer: $('vsxExplorer'), select: setSide, isSelected: (id) => id === sideView },
+      commands: $('vsxCommands'),
+      installed: $('vsxInstalled'), resultsHead: $('vsxResultsHead'), results: $('vsxResults'), count: extCount },
+  )
+  applyChoice(themeChoice())
+  initKeys()
+  await loadUserKeybindings()
+  keymap.set('extension', vsx.extensionKeybindings())
 
   $('newproj').addEventListener('click', (e) => void newProject({ x: e.clientX, y: e.clientY }))
   $('openproj').addEventListener('click', () => void openProjectDialog())
@@ -1218,7 +1498,10 @@ void (async () => {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
     themeMenu({ x: r.right, y: r.top })
   })
-  extSearch.addEventListener('input', renderExtensions)
+  extSearch.addEventListener('input', () => {
+    vsx.setQuery(extSearch.value)
+  })
+  extSearch.addEventListener('keydown', (e) => e.key === 'Enter' && void vsx.searchRegistry())
   const savedAuto = await tiny.configGet(CONFIG, 'autoSave', 'afterDelay')
   setAutoSave(savedAuto === 'off' || savedAuto === 'onFocusChange' ? savedAuto : 'afterDelay')
   stAuto.addEventListener('click', (e) => {
@@ -1278,7 +1561,10 @@ void (async () => {
     ; (window as unknown as Record<string, unknown>).__main = true
   setMenus()
   // opened with a path (dragged onto the dock, say) or the last project
-  const argPath = tiny.app.args.find((a) => typeof a === 'string' && a.startsWith('/'))
+  const argPath = tiny.app.args.find((a) => typeof a === 'string' && a.startsWith('/') && !a.endsWith('.vsix'))
+  // a double-clicked .vsix is an install request, reviewed before anything is written
+  for (const a of tiny.app.args) if (typeof a === 'string' && a.startsWith('/') && a.endsWith('.vsix')) void vsx.installVsixAt(a)
+  tiny.app.onOpenFile((path) => path.endsWith('.vsix') && void vsx.installVsixAt(path))
   const last = await tiny.configGet(CONFIG, 'lastProject', null)
   const restore = (tiny.app.state as { project?: string | null } | null)?.project
   const target = argPath ?? restore ?? last

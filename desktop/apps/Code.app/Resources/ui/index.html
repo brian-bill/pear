@@ -47,12 +47,17 @@
             <button id="emptyNew" class="vbtn">New Project</button>
           </div>
         </div>
+        <div id="vsxExplorer" class="vexplorer" hidden></div>
       </div>
       <div class="sideview" id="extView" hidden>
         <div class="viewtitle"><span>Extensions</span></div>
-        <div class="searchbox"><input id="extSearch" type="text" placeholder="Search Installed Extensions" aria-label="Search extensions"></div>
+        <div class="searchbox"><input id="extSearch" type="text" placeholder="Search Extensions in Marketplace" aria-label="Search extensions"></div>
         <div class="sechead static"><span class="chev" data-icon="chevron-down" data-size="16"></span><span class="sectitle">Installed</span><span id="extCount" class="badge"></span></div>
-        <div id="extensions" class="extlist"></div>
+        <div id="vsxInstalled" class="extlist more"></div>
+        <div class="sechead static"><span class="chev" data-icon="chevron-down" data-size="16"></span><span class="sectitle">Commands</span></div>
+        <div id="vsxCommands" class="extlist more"></div>
+        <div class="sechead static" id="vsxResultsHead"><span class="chev" data-icon="chevron-down" data-size="16"></span><span class="sectitle">Popular</span></div>
+        <div id="vsxResults" class="extlist more"></div>
       </div>
       <div class="sash sash-v" id="sashSide" role="separator" aria-orientation="vertical" aria-label="Resize side bar"></div>
     </aside>
@@ -68,6 +73,7 @@
       </div>
       <div class="breadcrumbs" id="breadcrumbs" hidden></div>
       <div class="editors" id="editors">
+        <div id="extDetail" class="extdetail" hidden></div>
         <div id="imageView" class="imageview" hidden>
           <div class="imagestage" id="imageStage"><img id="imageEl" alt=""></div>
           <div class="imagebar">

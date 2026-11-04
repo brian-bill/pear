@@ -210,7 +210,7 @@ const on = (name: string, fn: Handler): (() => void) => {
 /** Menu items given as functions: ids are made here, Desktop only ever sees plain data. */
 export interface MenuDef {
   title: string
-  items: Array<{ label?: string; shortcut?: string; action?: () => void | Promise<void>; disabled?: boolean; checked?: boolean; separator?: boolean }>
+  items: Array<{ label?: string; shortcut?: string; /** Shown like a shortcut but not registered: for keys the app handles itself. */ hint?: string; action?: () => void | Promise<void>; disabled?: boolean; checked?: boolean; separator?: boolean }>
 }
 
 const windowApi = {
@@ -228,7 +228,7 @@ const windowApi = {
         const id = `m${n++}`
         if (i.action) menuActions.set(id, i.action)
         if (i.shortcut) shortcuts.set(i.shortcut.replace(/⌘/g, 'Cmd+').replace(/\+\+/g, '+'), id)
-        return { id, label: i.label, shortcut: i.shortcut, disabled: i.disabled, checked: i.checked }
+        return { id, label: i.label, shortcut: i.shortcut ?? i.hint, disabled: i.disabled, checked: i.checked }
       }),
     }))
     return call<void>('window.setMenus', menus)

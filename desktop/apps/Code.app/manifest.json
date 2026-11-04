@@ -16,5 +16,28 @@
     "clipboard",
     "network"
   ],
-  "minify": true
+  "minify": true,
+  "typeDefinitions": [
+    {
+      "uti": "org.tiny.vsix",
+      "conformsTo": [
+        "public.archive"
+      ],
+      "mime": "application/vsix",
+      "description": "VS Code extension package",
+      "ext": [
+        "vsix"
+      ]
+    }
+  ],
+  "documentTypes": [
+    {
+      "ext": [
+        "vsix"
+      ],
+      "role": "viewer",
+      "uti": "org.tiny.vsix",
+      "icon": "Resources/icon.svg"
+    }
+  ]
 }

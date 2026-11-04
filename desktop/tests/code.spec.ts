@@ -88,16 +88,15 @@ test('AssemblyScript builds WebAssembly in the browser, and the preview runs it'
   await expect(preview(desktop).locator('#msg')).toContainText('wasm module is loaded')
 })
 
-test('extensions: Preview is installed by default and can be disabled', async ({ desktop }) => {
+test('built-in tools (Preview, AssemblyScript) are not listed as extensions, but still work', async ({ desktop }) => {
   await launch(desktop)
   await ui(desktop).locator('#tabExt').click()
-  const cards = ui(desktop).locator('.extcard')
-  await expect(cards).toHaveCount(2)
-  await expect(cards.first().locator('.name')).toHaveText(/Preview/)
-  // disable Preview: its button disappears from the toolbar
-  await cards.first().locator('input[type=checkbox]').click()
-  await expect(ui(desktop).getByRole('button', { name: /Preview/ })).toHaveCount(0)
-  await expect(cards.first().locator('.tag')).toContainText('built-in')
+  await expect(ui(desktop).locator('#vsxInstalled .extcard')).toHaveCount(0)
+  await expect(ui(desktop).locator('#extView')).not.toContainText('AssemblyScript')
+  await expect(ui(desktop).locator('#extView .extcard', { hasText: /^Preview/ })).toHaveCount(0)
+  // Preview is still there: it is a toolbar button once a project is open
+  await newProject(desktop, 'Tool', 'Web App')
+  await expect(ui(desktop).getByRole('button', { name: /Preview/ })).toBeVisible()
 })
 
 /** Write a project file through the kernel, as another program (or the user in Finder) would. */

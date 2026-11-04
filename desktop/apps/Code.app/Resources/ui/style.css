@@ -109,6 +109,12 @@ body { font: 13px/1.4 var(--vsc-font); color: var(--vsc-fg); }
 .extcard .desc { font-size: 12px; color: var(--vsc-fg-muted); }
 .extcard .foot { display: flex; align-items: center; margin-top: 4px; font-size: 12px; color: var(--vsc-fg-muted); }
 .extcard label { display: flex; align-items: center; gap: 8px; }
+.sideview#extView { overflow: auto; }
+#extView .extlist { flex: none; overflow: visible; }
+.vsxbtn { margin-left: auto; padding: 4px 16px; min-width: 76px; border-radius: 4px; border: 1px solid var(--vsc-border); background: var(--vsc-button); color: #fff; font-size: 12px; cursor: pointer; }
+.vsxbtn:hover:not(:disabled) { background: var(--vsc-button-hover); padding: 4px 20px; }
+.vsxbtn:disabled { opacity: 0.7; cursor: default; }
+.vsxwarn { color: var(--vsc-warning); }
 .extempty { padding: 8px 20px; color: var(--vsc-fg-muted); }
 
 /* toggle switch (replaces the base.css one with VS Code's flatter proportions) */
@@ -333,3 +339,72 @@ body { font: 13px/1.4 var(--vsc-font); color: var(--vsc-fg); }
 .stbtn .n { display: flex; align-items: center; gap: 3px; }
 
 [hidden] { display: none !important; }
+
+/* ---- extension details page (an editor tab) ---- */
+.extdetail { position: absolute; inset: 0; z-index: 2; overflow: auto; background: var(--vsc-bg); }
+.vsxpage { max-width: 1100px; margin: 0 auto; padding: 24px 28px 40px; }
+.vsxhead { display: flex; gap: 24px; align-items: flex-start; }
+.vsxart { flex: none; width: 128px; height: 128px; display: flex; align-items: center; justify-content: center; border-radius: 10px; background: var(--vsc-select-inactive); color: var(--vsc-accent-fg); overflow: hidden; }
+.vsxart img { width: 128px; height: 128px; object-fit: contain; }
+.vsxinfo { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.vsxinfo h1 { margin: 0; font-size: 26px; font-weight: 600; }
+.vsxinfo p { margin: 0; color: var(--vsc-fg-muted); }
+.vsxstats { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--vsc-fg-muted); }
+.vsxverified { color: var(--vsc-accent-fg); }
+.vsxactions { display: flex; gap: 8px; margin-top: 6px; }
+.vsxbtn.secondary { background: var(--vsc-select-inactive); color: var(--vsc-fg); }
+.vsxbtn.secondary:hover { background: var(--vsc-select); }
+.vsxmuted { color: var(--vsc-fg-muted); font-size: 12px; }
+.vsxtabs { display: flex; gap: 20px; margin: 20px 0 0; border-bottom: 1px solid var(--vsc-border); }
+.vsxtabs button { padding: 6px 2px; background: none; border: 0; border-bottom: 2px solid transparent; color: var(--vsc-fg-muted); text-transform: uppercase; font-size: 12px; cursor: pointer; }
+.vsxtabs button[aria-selected="true"] { color: var(--vsc-fg); border-bottom-color: var(--vsc-tab-top); }
+.vsxbody { display: flex; gap: 32px; align-items: flex-start; margin-top: 16px; }
+.vsxmain { flex: 1; min-width: 0; }
+.vsxmain.markdown { max-width: none; margin: 0; }
+.vsxmain img { max-width: 100%; }
+.vsxside { flex: none; width: 240px; font-size: 12px; }
+.vsxside h4 { margin: 0 0 6px; font-size: 13px; }
+.vsxside ul { margin: 0 0 16px; padding: 0; list-style: none; }
+.vsxside a { color: var(--vsc-accent-fg); cursor: pointer; }
+.vsxside dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; }
+.vsxside dt { color: var(--vsc-fg-muted); }
+.vsxside dd { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 760px) { .vsxbody { flex-direction: column; } .vsxside { width: auto; } }
+
+.vsxbtn.unavailable:disabled { background: var(--vsc-select-inactive); color: var(--vsc-fg-subtle); opacity: 0.6; cursor: not-allowed; }
+.extcard.unavailable .name, .extcard.unavailable .desc, .extcard.unavailable .exticon { opacity: 0.5; }
+
+/* ---- views contributed by extensions ---- */
+.vexplorer { flex: none; max-height: 45%; overflow: auto; border-top: 1px solid var(--vsc-border); }
+.vscroll { flex: 1; min-height: 0; overflow: auto; }
+.vsection { display: flex; flex-direction: column; }
+.vhead { width: 100%; background: none; border-left: 0; border-right: 0; border-bottom: 0; text-align: left; cursor: pointer; }
+.vtree { padding-bottom: 6px; }
+.vrow { display: flex; align-items: center; gap: 4px; height: 22px; padding-right: 8px; cursor: pointer; white-space: nowrap; color: var(--vsc-fg); }
+.vrow:hover { background: var(--vsc-hover); }
+.vchev { flex: none; width: 16px; display: flex; justify-content: center; color: var(--vsc-fg-muted); }
+.vglyph { flex: none; width: 16px; display: flex; justify-content: center; color: var(--vsc-fg-muted); }
+.vlabel { overflow: hidden; text-overflow: ellipsis; }
+.vdesc { overflow: hidden; text-overflow: ellipsis; color: var(--vsc-fg-muted); font-size: 12px; margin-left: 6px; }
+.vmsg { padding: 8px 20px; color: var(--vsc-fg-muted); font-size: 12px; }
+.vmask { width: 24px; height: 24px; background: currentColor; -webkit-mask: var(--vmask) center / 24px no-repeat; mask: var(--vmask) center / 24px no-repeat; }
+.vcmd { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; padding: 4px 20px; background: none; border: 0; color: var(--vsc-fg); text-align: left; cursor: pointer; }
+.vcmd:hover { background: var(--vsc-hover); }
+.vcmd .vdesc { margin-left: 0; }
+
+#extView .sechead.static { cursor: pointer; }
+#extView .sechead.static:hover { background: var(--vsc-hover); }
+#extView .sechead.static.collapsed + .extlist { display: none; }
+
+/* ---- quick pick: command palette, quick open, keyboard shortcuts ---- */
+.palette-backdrop { position: fixed; inset: 0; z-index: 50; display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; }
+.palette { width: min(600px, calc(100% - 32px)); max-height: 60vh; display: flex; flex-direction: column; background: var(--vsc-bg-alt); border: 1px solid var(--vsc-border); border-radius: 8px; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35); overflow: hidden; }
+.palette-input { margin: 6px; padding: 5px 8px; border: 1px solid var(--vsc-border); border-radius: 4px; background: var(--vsc-bg-inset); color: var(--vsc-fg); font: inherit; font-size: 13px; outline: none; }
+.palette-input:focus { border-color: var(--vsc-accent); }
+.palette-list { overflow: auto; padding: 0 0 6px; }
+.palette-row { display: flex; align-items: center; gap: 8px; height: 24px; padding: 0 12px; cursor: pointer; font-size: 13px; white-space: nowrap; }
+.palette-row[aria-selected='true'] { background: var(--vsc-select); }
+.palette-row .pd { color: var(--vsc-fg-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+.palette-row .pl { overflow: hidden; text-overflow: ellipsis; }
+.palette-row .pk { font: 11px var(--vsc-mono); padding: 1px 6px; border: 1px solid var(--vsc-border); border-radius: 4px; color: var(--vsc-fg-muted); background: var(--vsc-bg); }
+.palette-empty { padding: 8px 14px; color: var(--vsc-fg-muted); font-size: 13px; }

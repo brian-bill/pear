@@ -156,6 +156,7 @@ import 'monaco-editor/editor/contrib/semanticTokens/browser/documentSemanticToke
 import 'monaco-editor/editor/contrib/suggest/browser/suggestController.js'
 import 'monaco-editor/editor/common/standaloneStrings.js'
 import * as monaco from 'monaco-editor/editor/editor.api.js'
+import { extensionLanguageOf } from './vsxcontrib'
 import { escapeHtml, joinPath, tiny } from '@tiny/sdk'
 import { AS_LANGUAGE, setupAssemblyScript } from './as-language'
 import { currentPalette, type Palette } from './themes'
@@ -291,7 +292,7 @@ export const looksLikeAssemblyScript = (text: string): boolean => /\b(i8|i16|i32
 export function languageOf(path: string): string | undefined {
   // AssemblyScript reads like TypeScript but is not, and has its own service (as-language.ts)
   if (assemblyScriptProject && /^(src|assembly)\//.test(path) && /\.ts$/.test(path) && !path.endsWith('.d.ts')) return AS_LANGUAGE
-  return LANGS.find(([re]) => re.test(path))?.[1]
+  return LANGS.find(([re]) => re.test(path))?.[1] ?? extensionLanguageOf(path)
 }
 
 const bare = (c: string): string => c.replace('#', '')
@@ -422,9 +423,52 @@ export class CodeEditor {
       scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10, useShadows: false },
     })
     this.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => this.onSave())
+    this.addWorkbenchKeys(this.editor)
     this.editor.onDidChangeCursorPosition((e) => this.onCursor(e.position.lineNumber, e.position.column))
     syncTheme(currentPalette())
     return this.editor
+  }
+
+  /** Called for workbench keys that Monaco would otherwise take for itself (F1, Cmd+K chords): the command id. */
+  onWorkbenchKey: (command: string) => void = () => {}
+
+  /**
+   * Monaco treats Cmd+K as the start of its own chords (fold, ...) and F1 as its palette, so a key that
+   * the workbench owns has to be claimed here to work while the editor has focus.
+   */
+  private addWorkbenchKeys(ed: monaco.editor.IStandaloneCodeEditor): void {
+    const { KeyMod, KeyCode } = monaco
+    const chord = (second: number): number => KeyMod.chord(KeyMod.CtrlCmd | KeyCode.KeyK, second)
+    const claim = (key: number, command: string): void => void ed.addCommand(key, () => this.onWorkbenchKey(command))
+    claim(KeyCode.F1, 'workbench.action.showCommands')
+    claim(KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyP, 'workbench.action.showCommands')
+    claim(chord(KeyMod.CtrlCmd | KeyCode.KeyS), 'workbench.action.openGlobalKeybindings')
+    claim(chord(KeyMod.CtrlCmd | KeyCode.KeyT), 'workbench.action.selectTheme')
+    claim(chord(KeyMod.CtrlCmd | KeyCode.KeyW), 'workbench.action.closeAllEditors')
+    claim(chord(KeyCode.KeyV), 'markdown.showPreviewToSide')
+    claim(chord(KeyCode.KeyW), 'workbench.action.closeAllEditors')
+  }
+
+  /** Monaco's own commands, for the command palette. */
+  actions(): Array<{ id: string; label: string }> {
+    return (this.editor?.getSupportedActions() ?? []).map((a) => ({ id: a.id, label: a.label }))
+  }
+
+  toggleWordWrap(): boolean {
+    if (!this.editor) return false
+    const on = this.editor.getOption(monaco.editor.EditorOption.wordWrap) !== 'off'
+    this.editor.updateOptions({ wordWrap: on ? 'off' : 'on' })
+    return !on
+  }
+
+  focus(): void {
+    this.editor?.focus()
+  }
+
+  revealLine(line: number): void {
+    this.editor?.revealLineInCenter(line)
+    this.editor?.setPosition({ lineNumber: line, column: 1 })
+    this.editor?.focus()
   }
 
   activePath(): string | null {
