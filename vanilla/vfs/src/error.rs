@@ -1,6 +1,6 @@
 use std::fmt;
 
-/// errno-style codes, matching `contracts/conventions.md`.
+/// errno-style codes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Errno {
     ENOENT,

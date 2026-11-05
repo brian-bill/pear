@@ -1,4 +1,4 @@
-/** `tiny.session`: session save and restore, power, lock, startup items, safe mode (`contracts/boot-and-session.md`). */
+/** `tiny.session`: session save and restore, power, lock, startup items, safe mode. */
 import { expect, test } from './fixtures'
 
 test.use({ system: true, helpers: true })

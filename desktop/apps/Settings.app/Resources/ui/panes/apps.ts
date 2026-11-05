@@ -1,6 +1,6 @@
 import { tiny } from '@tiny/sdk'
 import { attempt, button, choose, group, h, line, say, type Pane } from '../lib'
-import { browseSection, provenanceNames, sourcesSection, updatesSection } from './sources'
+import { provenanceNames, sourcesSection, storeSection } from './sources'
 
 interface Bundle { id: string; name: string; version: string; kind: string; system: boolean; permissions: string[]; path: string }
 interface Rec { id: string; name: string }
@@ -49,13 +49,11 @@ export const appsPane: Pane = {
       from = await provenanceNames()
       draw(await installedApps())
     }
-    const browse = browseSection(() => void redraw())
     const conf = await conflicts()
     root.append(h('div', { class: 'pane' },
+      storeSection(),
       h('section', null, h('h2', null, 'Installed apps'), list),
-      await sourcesSection(() => void browse.refresh(), tiny.app.args.find((a) => a.startsWith('add-source:'))?.slice('add-source:'.length)),
-      browse.el,
-      updatesSection(() => void redraw()),
+      await sourcesSection(() => void redraw(), tiny.app.args.find((a) => a.startsWith('add-source:'))?.slice('add-source:'.length)),
       h('section', null, h('h2', null, 'Default apps'), await defaults()),
       conf))
   },

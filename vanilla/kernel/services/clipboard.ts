@@ -54,7 +54,7 @@ const sizeOf = (data: unknown): number =>
   typeof data === 'string' ? data.length * 2 : data instanceof Uint8Array ? data.byteLength : data instanceof ArrayBuffer ? data.byteLength : -1
 
 /**
- * `tiny.clipboard`: the system pasteboards (`general`, `drag`, `find`) and drag and drop (`contracts/clipboard.md`).
+ * `tiny.clipboard`: the system pasteboards (`general`, `drag`, `find`) and drag and drop.
  * Items are `{type, data}`, one per representation. The general pasteboard needs the `clipboard` permission and is
  * mirrored to the host clipboard by the page's driver when the page allows it.
  */

@@ -1,10 +1,12 @@
-/** VS Code web extensions in Code (`contracts/code-extensions.md`): sideload, review, contributions, Workspace Trust, the host. */
+/** VS Code web extensions in Code: sideload, review, contributions, Workspace Trust, the host. */
 import { expect, test, type Desktop } from './fixtures'
 
 const win = (d: Desktop) => d.win(/Code/)
 const ui = (d: Desktop) => win(d).frameLocator('iframe')
 const sheet = (d: Desktop) => win(d).locator('.sheet')
 const HOME = '/Users/pear'
+
+import { readFile } from 'node:fs/promises'
 
 import { zip } from './zip'
 
@@ -58,9 +60,71 @@ test('a .vsix is reviewed before install, then listed, themed, and kept in the V
 
 test('a Node-only extension is refused and nothing is written', async ({ desktop }) => {
   await open(desktop, 'nodey.vsix', NODE_ONLY)
-  await expect(sheet(desktop)).toContainText('needs Node.js')
+  await expect(sheet(desktop)).toContainText('needs the Node.js runtime')
   await sheet(desktop).getByRole('button', { name: 'OK' }).click()
   expect(await desktop.page.evaluate((h) => window.tiny!.kernel.exists(`${h}/Library/Application Support/Code/extensions/acme.nodey-1.0.0`), HOME)).toBe(false)
+})
+
+const NODEY = zip({
+  'extension/package.json': JSON.stringify({
+    publisher: 'acme',
+    name: 'nodey',
+    version: '1.0.0',
+    displayName: 'Nodey',
+    engines: { vscode: '^1.90.0', node: '>=18' },
+    main: './x.js',
+    activationEvents: ['onStartupFinished'],
+    contributes: { commands: [{ command: 'nodey.say', title: 'Nodey: Say' }] },
+  }),
+  'extension/x.js': `const vscode = require('vscode'), fs = require('fs'), path = require('path')
+exports.activate = (ctx) => {
+  ctx.subscriptions.push(vscode.commands.registerCommand('nodey.say', () => {
+    const manifest = JSON.parse(fs.readFileSync(path.join(ctx.extensionPath, 'package.json'), 'utf8'))
+    fs.writeFileSync(path.join(ctx.globalStoragePath, 'state.txt'), 'saved by ' + manifest.name)
+    fs.writeFileSync(path.join(ctx.extensionPath, 'hack.txt'), 'in memory only')
+    vscode.window.showInformationMessage('node says ' + manifest.name + ' ' + process.version)
+  }))
+}`,
+})
+
+/** Install the built Node.js runtime bundle the way a user does; it is not part of Desktop. */
+async function addNodeRuntime(d: Desktop): Promise<void> {
+  const dir = new URL('../../runtimes/node-js/dist/Node.app/', import.meta.url).pathname
+  const files: Record<string, string> = {}
+  for (const name of ['manifest.json', 'launcher.js', 'embed.js']) {
+    files[name] = await readFile(dir + name, 'utf8').catch(() => {
+      throw new Error('The Node.js runtime is not built: run `pnpm --filter @tiny/runtime-node build`.')
+    })
+  }
+  await d.page.evaluate((f) => window.tiny!.kernel.bundleInstall({ files: f }), files)
+}
+
+test('with the Node.js runtime installed, a Node-only extension is installed and runs, with files under the host policy', async ({ desktop }) => {
+  test.setTimeout(120_000)
+  await addNodeRuntime(desktop)
+  await open(desktop, 'nodey.vsix', NODEY)
+  await expect(sheet(desktop)).toContainText('Nodey 1.0.0')
+  await expect(sheet(desktop)).toContainText('Node.js runtime')
+  await sheet(desktop).getByRole('button', { name: 'Install', exact: true }).click()
+  await ui(desktop).locator('#newproj').click()
+  await sheet(desktop).locator('input').fill('Trusty')
+  await sheet(desktop).getByRole('button', { name: 'OK' }).click()
+  await desktop.page.getByRole('menuitem', { name: 'Web App', exact: true }).click()
+  await expect(sheet(desktop)).toContainText('Do you trust the authors')
+  await sheet(desktop).getByRole('button', { name: 'Trust Workspace' }).click()
+  await expect(sheet(desktop)).toHaveCount(0)
+
+  // opening a menu while the sheet is still closing can lose the click, so try again until the command is there
+  await expect(async () => {
+    await desktop.page.locator('.menubar .title', { hasText: 'Extensions' }).click()
+    await desktop.page.locator('.menu button', { hasText: 'Run Extension Command' }).click({ timeout: 3000 })
+    await desktop.page.getByRole('menuitem', { name: 'Nodey: Say' }).click({ timeout: 3000 })
+  }).toPass({ timeout: 30_000 })
+  await expect(ui(desktop).locator('#outlog')).toContainText('node says nodey v22.12.0', { timeout: 60_000 })
+
+  const storage = `${HOME}/Library/Application Support/Code/globalStorage/acme.nodey/state.txt`
+  await expect.poll(() => desktop.page.evaluate((p) => window.tiny!.kernel.exists(p), storage)).toBe(true)
+  expect(await desktop.page.evaluate((h) => window.tiny!.kernel.exists(`${h}/Library/Application Support/Code/extensions/acme.nodey-1.0.0/hack.txt`), HOME)).toBe(false)
 })
 
 test('extension code is paused in Restricted Mode and runs once the workspace is trusted', async ({ desktop }) => {
@@ -144,7 +208,7 @@ test('the Extensions view searches the marketplace as you type, like VS Code, an
   await expect(ui(desktop).locator('.tab[aria-selected="true"]')).toContainText('Extension: Other')
   await expect(ui(desktop).locator('#extDetail .vsxinfo h1')).toHaveText('Other')
   await expect(ui(desktop).locator('#extDetail').getByRole('button', { name: 'Install' })).toBeDisabled()
-  await expect(ui(desktop).locator('#extDetail .vsxinfo')).toContainText('needs Node.js')
+  await expect(ui(desktop).locator('#extDetail .vsxinfo')).toContainText('needs the Node.js runtime')
 
   // the installed one: README from its own files, features, and actions
   await ui(desktop).locator('#vsxInstalled .extcard', { hasText: 'Hello' }).click()

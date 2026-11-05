@@ -1,4 +1,4 @@
-/** App packages, `.pearapp` (`contracts/app-distribution.md`): packaging, checks, verification, and install. */
+/** App packages, `.pearapp`: packaging, checks, verification, and install. */
 import { ByteReader, END_RECORD, FLAG_GZIP, bodyStream, frame, gzipped, readRecord, record, unframe } from '../src/container'
 import { PEARAPP_MAGIC, Packager, readPackage, type PackageHeader } from '../src/pearapp'
 import { expect, test } from './fixtures'

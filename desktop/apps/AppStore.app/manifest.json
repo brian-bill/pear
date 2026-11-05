@@ -1,0 +1,10 @@
+{
+  "id": "org.tiny.appstore",
+  "name": "App Store",
+  "version": "1.0.0",
+  "kind": "app",
+  "icon": "Resources/icon.svg",
+  "ui": "Resources/ui/index.html",
+  "window": { "width": 900, "height": 620, "minWidth": 640, "minHeight": 420 },
+  "permissions": []
+}

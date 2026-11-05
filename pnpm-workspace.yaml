@@ -1,6 +1,7 @@
 packages:
   - vanilla/kernel
   - desktop
+  - runtimes/node-js
 
 allowBuilds:
   esbuild: true

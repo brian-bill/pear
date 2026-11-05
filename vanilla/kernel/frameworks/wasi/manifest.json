@@ -1,0 +1,12 @@
+{
+  "id": "org.tiny.framework.wasi",
+  "name": "WASI",
+  "version": "1.0.0",
+  "kind": "framework",
+  "provides": {
+    "framework": "wasi",
+    "version": "1.0.0",
+    "api": "wasi_snapshot_preview1",
+    "module": "wasi.js"
+  }
+}

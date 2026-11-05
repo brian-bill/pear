@@ -1,6 +1,6 @@
 import { dirname, joinPath, tiny } from '@tiny/sdk'
 
-/// Media file types QuickTime claims (`contracts/launch-services.md`): video containers and, as a
+/// Media file types QuickTime claims: video containers and, as a
 /// friendly fallback for Open With, audio files (same element, artwork instead of a picture).
 export const VIDEO_MIME: Record<string, string> = {
   mp4: 'video/mp4', m4v: 'video/mp4', mov: 'video/quicktime', qt: 'video/quicktime', webm: 'video/webm',

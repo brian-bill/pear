@@ -70,12 +70,12 @@ Chrome/Chromium is the only browser tested. It needs OPFS with sync access handl
 
 ## Notes
 
-- **Isolation:** each process runs in a sandboxed iframe (opaque origin) with a classic Worker inside. The kernel's `MessagePort` is its only way out. The design and its limits are in `contracts/permissions.md`.
+- **Isolation:** each process runs in a sandboxed iframe (opaque origin) with a classic Worker inside. The kernel's `MessagePort` is its only way out.
 - **Quotas:** there are no CPU or memory limits per process yet. A hostile program can still burn CPU or memory until it is killed. The heartbeat marks it `unresponsive`; `SIGKILL` removes its frame.
 - **Userland:** `pnpm build` bundles `userland/*.ts` into `dist/userland.json`. Programs live in the VFS, not in the page, so an update to the shell reaches existing users only when `installUserland` runs again (it overwrites `/bin/*`); do this after each deploy that changes `userland/`.
 - **Spawn cost:** every `spawn` loads an iframe, so it is slower than a bare Worker. The process runtime is fetched once and cached by the page.
 - **Process limit:** 64 live processes (`EAGAIN` beyond that).
-- **Shared memory:** not available. Use `send(..., { transfer: [buffer] })` for zero-copy handoff (see `contracts/ipc.md`).
+- **Shared memory:** not available. Use `send(..., { transfer: [buffer] })` for zero-copy handoff.
 - **Heartbeat:** the kernel pings every started process every 1 s and flags it `unresponsive` after 3 s without an answer. Change it with `kernel.boot({ heartbeat: { interval, timeout } })` or turn it off with `heartbeat: false`.
 - **Upgrading the engine:** volumes written by the previous release are upgraded in place on the next flush and cannot be opened by the old release afterwards, so roll back by restoring storage, not by redeploying the old build. After an unclean shutdown the first boot replays the journal and deletes leftover data files; `kernel.fsInfo().recovery` says what it did.
 - **Data lives in OPFS** under the namespace given to `boot({ namespace })`. Clearing site data deletes the whole virtual disk, and `shutdown({ destroy: true })` does too.

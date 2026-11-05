@@ -57,7 +57,11 @@ export function createKernel(worker: Worker, opts: HostManagerOptions = {}): Ker
     const p = pending.get(msg.id)
     if (!p) return
     pending.delete(msg.id)
-    if ('error' in msg) p.reject(new KernelError(msg.error.message, msg.error.code, msg.error.path))
+    if ('error' in msg) {
+      const err = new KernelError(msg.error.message, msg.error.code, msg.error.path)
+      if (msg.error.stack) err.cause = msg.error.stack
+      p.reject(err)
+    }
     else p.resolve(msg.result)
   }
 

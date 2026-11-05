@@ -63,7 +63,7 @@ interface Saved {
 
 /**
  * `tiny.session`: session save and restore, power states, the lock screen, startup items, safe mode and update
- * notices (`contracts/boot-and-session.md`). Desktop is the session manager: it registers a port, and when the
+ * notices. Desktop is the session manager: it registers a port, and when the
  * session is saved the service asks it (and every registered app) for its state.
  */
 export default async (tiny: Pear) => {

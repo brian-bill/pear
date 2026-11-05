@@ -458,7 +458,13 @@ export class Shell {
       return { pid }
     } catch (e) {
       await cleanup()
-      await this.err(`sh: ${name}: ${reason(e)}\n`)
+      const why = reason(e)
+      // A program that needs a language runtime nobody installed: say so like a missing command (the kernel's message says where to add one).
+      if (why.includes('no runtime provides')) {
+        await this.err(`sh: ${name}: command not found (${why})\n`)
+        return { done: Promise.resolve(127) }
+      }
+      await this.err(`sh: ${name}: ${why}\n`)
       return { done: Promise.resolve(126) }
     }
   }

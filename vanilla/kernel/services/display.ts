@@ -39,7 +39,7 @@ const dim = (v: unknown, what: string, max: number) => {
 }
 
 /**
- * `tiny.display`: screens and drawing surfaces (`contracts/display.md`). Desktop's compositor subscribes and gets
+ * `tiny.display`: screens and drawing surfaces. Desktop's compositor subscribes and gets
  * `{type: 'commit', surface, frame, damage, buffer?}` as apps commit. A `bitmap` surface commits RGBA pixels
  * (`width * height * 4` bytes, passed by transfer: there is no shared memory); `2d` and `webgl` surfaces hand their
  * `OffscreenCanvas` over with `attach` and the compositor reads it directly.

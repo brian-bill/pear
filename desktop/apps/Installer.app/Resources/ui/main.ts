@@ -1,6 +1,6 @@
 import { basename, formatBytes, tiny } from '@tiny/sdk'
 
-/// The one place an app is reviewed before it installs (`contracts/app-distribution.md`): a package opened from a file,
+/// The one place an app is reviewed before it installs: a package opened from a file,
 /// a link (`?install=`), or Code's "Package & Install". The kernel has already checked the checksum and every file's
 /// hash by the time this shows anything; what is left for the person is whether they trust it and what it can reach.
 
@@ -11,7 +11,14 @@ interface Manifest {
   permissions: string[]
   documentTypes?: Array<{ ext: string[] }>
   urlSchemes?: string[]
+  kind?: string
+  provides?: { name?: string; framework?: string; version?: string; api?: string; abi?: string[]; commands?: string[]; shebangs?: string[]; handles?: Array<{ ext: string[]; uti?: string }> }
+  requires?: Array<{ runtime?: string; framework?: string; range: string }>
 }
+interface Unmet { kind: 'runtime' | 'framework'; name: string; range: string; reason: string }
+interface InstalledRuntime { bundleId: string; name: string; commands: string[] }
+/** What the review needs to know about the rest of the system. */
+interface Context { unmet: Unmet[]; clashes: Array<{ command: string; holder: string }> }
 interface Archive {
   ok: boolean
   error?: string
@@ -52,6 +59,7 @@ const WHAT: Record<string, string> = {
   location: 'Know your location',
   'process.spawn': 'Start other programs',
   'display.capture': 'Record the screen',
+  loopback: 'Run a web server that only this device can reach',
 }
 const SEVERE = new Set(['fs.all', 'process.spawn', 'display.capture'])
 
@@ -90,8 +98,43 @@ async function installedVersion(id: string): Promise<{ version: string } | null>
   }
 }
 
-function review(r: Review): void {
+/** Requirements nothing installed meets, and commands a runtime wants that another one already holds. Never blocks the install. */
+async function contextFor(m: Manifest): Promise<Context> {
+  const unmet = m.requires?.length ? await kernel<Unmet[]>('runtimeUnmet', m.requires).catch(() => [] as Unmet[]) : []
+  let clashes: Context['clashes'] = []
+  if (m.kind === 'runtime' && m.provides?.commands?.length) {
+    const have = await kernel<InstalledRuntime[]>('runtimeList').catch(() => [] as InstalledRuntime[])
+    clashes = m.provides.commands.flatMap((command) => {
+      const holder = have.find((x) => x.bundleId !== m.id && x.commands.includes(command))
+      return holder ? [{ command, holder: holder.name }] : []
+    })
+  }
+  return { unmet, clashes }
+}
+
+function runtimeCard(m: Manifest, ctx: Context): Node[] {
+  const p = m.provides ?? {}
+  const files = [...new Set((p.handles ?? []).flatMap((h) => (h.ext.length ? h.ext.map((e) => `.${e}`) : h.uti ? [h.uti] : [])))]
+  return [
+    el('div', { class: 'card', id: 'runtime-card' }, el('h2', null, 'This is a runtime'),
+      el('p', { class: 'note' }, `It lets Pear run programs written for ${p.name ?? 'another language'}. It is not an app you open.`),
+      el('dl', { class: 'facts' },
+        el('dt', null, 'Runtime'), el('dd', null, `${p.name ?? m.name} ${p.version ?? ''}`.trim()),
+        el('dt', null, 'Commands it adds'), el('dd', null, p.commands?.length ? p.commands.join(', ') : 'None'),
+        el('dt', null, 'Shebangs'), el('dd', null, p.shebangs?.length ? p.shebangs.map((s) => `#!/usr/bin/env ${s}`).join(', ') : 'None'),
+        el('dt', null, 'File types it opens'), el('dd', null, files.length ? files.join(', ') : 'None'),
+        el('dt', null, 'abi'), el('dd', null, (p.abi ?? ['program']).join(', ')),
+        el('dt', null, 'Can use (advisory)'), el('dd', null, m.permissions.length ? m.permissions.map((x) => WHAT[x] ?? x).join('; ') : 'No special access'))),
+    ctx.clashes.length ? el('div', { class: 'card', id: 'runtime-conflicts' }, el('h2', null, 'Commands already taken'),
+      el('ul', null, ...ctx.clashes.map((c) => el('li', { class: 'error' }, `“${c.command}” already belongs to ${c.holder}. It keeps the command; this runtime will not get it.`)))) : null,
+    el('p', { class: 'note', id: 'runtime-trust' }, 'A runtime runs inside every app that uses it, with that app’s rights. Only add runtimes you trust.'),
+  ].filter(Boolean) as Node[]
+}
+
+function review(r: Review, ctx: Context = { unmet: [], clashes: [] }): void {
   const m = r.manifest
+  const isRuntime = m.kind === 'runtime'
+  const isFramework = m.kind === 'framework'
   const update = Boolean(r.installed)
   const downgrade = r.installed ? compare(m.version, r.installed.version) < 0 : false
   const reach: Array<[string, boolean]> = [
@@ -107,7 +150,7 @@ function review(r: Review): void {
     busy(`${update ? 'Updating' : 'Installing'} ${m.name}…`)
     try {
       const app = await r.install(update)
-      done(app.id, app.name, update)
+      done(app.id, app.name, update, m.kind)
     } catch (e) {
       const err = e as { code?: string; message?: string }
       problem(`${m.name} was not installed`, `${err.message ?? 'Something went wrong.'}${err.code ? ` (${err.code})` : ''}`)
@@ -124,23 +167,33 @@ function review(r: Review): void {
       el('dt', null, 'Size'), el('dd', null, `${formatBytes(r.bytes)} in ${r.files} file${r.files === 1 ? '' : 's'}`),
       el('dt', null, 'Checked'), el('dd', null, r.verified),
       r.installed ? el('dt', null, 'On this computer') : null, r.installed ? el('dd', null, `Version ${r.installed.version}${downgrade ? ' (newer than this package)' : ''}`) : null),
-    el('div', { class: 'card' }, el('h2', null, 'This app can'),
+    ...(isRuntime ? runtimeCard(m, ctx) : []),
+    isFramework ? el('div', { class: 'card', id: 'framework-card' }, el('h2', null, 'This is a framework'),
+      el('p', { class: 'note' }, 'A library that runtimes and apps share. It is not an app you open.'),
+      el('dl', { class: 'facts' },
+        el('dt', null, 'Framework'), el('dd', null, `${m.provides?.framework ?? m.name} ${m.provides?.version ?? ''}`.trim()),
+        el('dt', null, 'api'), el('dd', null, m.provides?.api ?? 'Not stated'))) : null,
+    ctx.unmet.length ? el('div', { class: 'card', id: 'unmet' }, el('h2', null, 'Needs something that is not installed'),
+      el('ul', null, ...ctx.unmet.map((u) => el('li', { class: 'error' }, `${u.kind === 'runtime' ? 'Runtime' : 'Framework'} ${u.name} ${u.range}: ${u.reason}`))),
+      el('p', { class: 'note' }, 'Install it first, then this app will run. You can still install this one now.')) : null,
+    isRuntime ? null : el('div', { class: 'card' }, el('h2', null, isFramework ? 'It can' : 'This app can'),
       reach.length ? el('ul', null, ...reach.map(([text, severe]) => el('li', severe ? { class: 'error' } : null, text))) : el('p', { class: 'note' }, 'Ask for no special access.')),
-    el('p', { class: 'note' }, 'It runs inside Pear’s sandbox and asks again for anything it needs later. Only install apps from people you trust.'),
+    isRuntime ? null : el('p', { class: 'note' }, 'It runs inside Pear’s sandbox and asks again for anything it needs later. Only install apps from people you trust.'),
     el('div', { class: 'spacer' }),
     el('div', { class: 'actions' }, cancel, go),
   )
   go.focus()
 }
 
-function done(id: string, name: string, updated: boolean): void {
+function done(id: string, name: string, updated: boolean, kind = 'app'): void {
+  const openable = !['runtime', 'framework'].includes(kind)
   show(
     el('div', { class: 'center' }, el('div', { class: 'tile', style: 'margin:0 auto 12px' }, '✓'),
       el('h1', null, `${name} was ${updated ? 'updated' : 'installed'}`),
-      el('p', { class: 'note' }, 'You can find it in the Launchpad.'),
+      el('p', { class: 'note' }, openable ? 'You can find it in the Launchpad.' : kind === 'runtime' ? 'Its commands are ready. See it in Settings > Runtimes.' : 'Apps and runtimes that need it can use it now.'),
       el('div', { class: 'actions', style: 'justify-content:center' },
         el('button', { onclick: () => tiny.window.close() }, 'Done'),
-        el('button', { class: 'primary', id: 'open', onclick: () => void tiny.shell.openApp(id).then(() => tiny.window.close()) }, 'Open'))),
+        openable ? el('button', { class: 'primary', id: 'open', onclick: () => void tiny.shell.openApp(id).then(() => tiny.window.close()) }, 'Open') : null)),
   )
 }
 
@@ -200,7 +253,8 @@ async function route(arg: string): Promise<void> {
   busy('Checking the package…')
   try {
     const r = arg.startsWith('install:') ? await fromUrl(arg.slice('install:'.length)) : await fromFile(arg)
-    if (mine === token) review(r)
+    const ctx = await contextFor(r.manifest)
+    if (mine === token) review(r, ctx)
   } catch (e) {
     const err = e as { code?: string; message?: string }
     if (mine === token) problem('This can’t be installed', `${err.message ?? 'Something went wrong.'}${err.code ? ` (${err.code})` : ''}`)

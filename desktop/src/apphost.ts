@@ -25,8 +25,11 @@ const BROWSER_CSP = "default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval
  * Code builds and previews WebAssembly: `wasm-unsafe-eval` lets the app (and the previews and compiler
  * worker it hosts, which inherit this policy) instantiate wasm, `worker-src blob:` lets it run its
  * in-browser compiler as a worker. Still no network and an opaque origin.
+ * `script-src blob:` is for the Node.js runtime's embed Worker, which compiles the
+ * extension's modules from blob scripts because `eval` is forbidden here; the frame already runs inline scripts, so this adds
+ * no way in, and `eval` / `new Function` stay off.
  */
-const CODE_CSP = "default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; worker-src blob:; frame-src 'none'; form-action 'none'"
+const CODE_CSP = "default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval' blob:; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; worker-src blob:; frame-src 'none'; form-action 'none'"
 const THEME_VARS = [
   '--accent', '--window-bg', '--window-titlebar', '--window-border', '--menu-bg', '--text', '--text-dim', '--separator', '--terminal-bg', '--terminal-fg', '--font', '--mono', '--radius-window',
 ]
@@ -36,11 +39,12 @@ const dec = new TextDecoder()
 /** Apps that manage the system. Their calls under `admin.` run as the system; every other app is refused. */
 /** Calls that only read a path: in a project they look in the app's bundle first. */
 const READS = new Set(['readFile', 'readdir', 'stat', 'lstat', 'exists'])
-const ADMIN_APPS = new Set(['org.tiny.settings', 'org.tiny.activitymonitor', 'org.tiny.console', 'org.tiny.finder', 'org.tiny.installer'])
+const ADMIN_APPS = new Set(['org.tiny.settings', 'org.tiny.activitymonitor', 'org.tiny.console', 'org.tiny.finder', 'org.tiny.installer', 'org.tiny.appstore'])
 /** The kernel calls `admin.kernel` passes through. Anything that moves the process table or the file system's contents stays out. */
 const ADMIN_KERNEL = new Set([
   'permList', 'permStatus', 'permGrant', 'permRevoke', 'permReset', 'permAudit',
   'bundleList', 'bundleInfo', 'bundleUninstall', 'bundleVerify', 'bundleRescan', 'bundleInstall', 'bundleUpdate', 'bundleInspectArchive', 'bundleInstallArchive', 'bundleInstalledFrom',
+  'runtimeList', 'runtimeSetDefault', 'runtimeUnmet', 'runtimeConflicts', 'frameworkList',
   'configGet', 'configSet', 'configDelete', 'configList', 'configReset', 'configDomains', 'configFlush',
   'listProcesses', 'processInfo', 'kill', 'ping', 'diagSnapshot', 'bootInfo', 'bootMarks', 'fsInfo',
   'logQuery', 'logExport', 'logClear', 'logWrite', 'crashList', 'crashGet', 'crashSubmit', 'crashClear', 'traceStart', 'traceMark', 'traceMeasure', 'traceStop',

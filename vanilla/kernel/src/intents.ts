@@ -1,4 +1,4 @@
-/// Install intents in a Pear page's address (`contracts/app-distribution.md`, `contracts/app-registry.md`):
+/// Install intents in a Pear page's address:
 ///
 ///   https://<pear-host>/?install=<encoded source URL>      install an app from a .pearapp or a served directory
 ///   https://<pear-host>/?addSource=<encoded registry URL>  offer to add an app source

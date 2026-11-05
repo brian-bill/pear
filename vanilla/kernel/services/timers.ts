@@ -25,7 +25,7 @@ const MIN_REPEAT_MS = 4 // what browsers clamp nested timers to
 const KEEP_AWAKE_MAX = 16
 
 /**
- * `tiny.timers`: clocks and timers (`contracts/timers.md`). A timer delivers `{type: 'timer', id}` to the port the
+ * `tiny.timers`: clocks and timers. A timer delivers `{type: 'timer', id}` to the port the
  * caller passes in `rights`; frames `{type: 'frame', id, time}`, idle callbacks `{type: 'idle', id}`. The page's driver
  * supplies display-aligned frames, idle time, wake locks and visibility; without it frames are paced at 60 Hz and idle
  * callbacks run after their timeout.

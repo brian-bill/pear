@@ -1,8 +1,8 @@
-// The Extensions view's VS Code side (contracts/code-extensions.md): installed extensions, search
+// The Extensions view's VS Code side: installed extensions, search
 // on Open VSX, the install review, Workspace Trust, and the commands extensions contribute.
 import { escapeHtml, formatBytes, tiny } from '@tiny/sdk'
 import { icon } from './icons'
-import { VsxError, type Listing, type Runnable } from './vsx'
+import { NEEDS_NODE, VsxError, type Listing, type Runnable } from './vsx'
 import { ExtensionHost } from './vsxhost'
 import { applyAll, extensionThemes, setExtensionTheme } from './vsxcontrib'
 import { iconUrl, renderDetail } from './vsxdetail'
@@ -52,10 +52,10 @@ let searching = 0
 const installing = new Set<string>()
 /** Whether each listing can run in a browser; absent while it is being checked. */
 const runs = new Map<string, Runnable>()
-const NODE_ONLY = 'This extension needs Node.js, so it can’t run in a browser.'
 
 /** Check listings a few at a time; `done` is called as each answer arrives. */
 async function checkAll(items: Listing[], done: (l: Listing) => void): Promise<void> {
+  await store.refreshNode()
   const todo = items.filter((l) => !runs.has(l.id))
   const worker = async (): Promise<void> => {
     for (let l = todo.shift(); l; l = todo.shift()) {
@@ -76,7 +76,7 @@ async function loadTrust(): Promise<void> {
   trustedPaths = new Set(Array.isArray(saved) ? (saved as string[]) : [])
 }
 
-const needsTrust = (e: Installed): boolean => !!e.enabled && !!e.manifest.browser && e.manifest.capabilities?.untrustedWorkspaces?.supported !== true
+const needsTrust = (e: Installed): boolean => !!e.enabled && !!(e.manifest.browser || e.manifest.main) && e.manifest.capabilities?.untrustedWorkspaces?.supported !== true
 
 /** Workspace Trust, VS Code style: a workspace is in Restricted Mode (extension code that needs trust does not run) until trusted. */
 export async function ensureTrust(): Promise<void> {
@@ -131,12 +131,12 @@ function reviewDetail(r: Review, s: Source): string {
   return [
     `Publisher: ${r.manifest.publisher}`,
     `Source: ${sourceLabel(s)}${s.kind === 'registry' ? (s.verified ? ' (verified publisher)' : '') : ''}${r.unsigned ? ' — unsigned' : ''}`,
-    `Runs as: ${r.kind === 'web' ? 'code in a Worker (web extension)' : 'declarative (no code)'}`,
+    `Runs as: ${r.kind === 'web' ? 'code in a Worker (web extension)' : r.kind === 'both' ? 'code in a Worker (web entry; it also has a Node.js entry)' : r.kind === 'node' ? 'code in the Node.js runtime (a Worker with its own Node environment)' : 'declarative (no code)'}`,
     parts.length ? `Contributes: ${parts.join(', ')}` : 'Contributes: nothing declarative',
     `Size: ${r.files} files, ${formatBytes(r.bytes)}`,
     ...(s.kind !== 'folder' ? [`SHA-256: ${s.digest.slice(0, 16)}…`] : []),
     ...(r.warning ? [`⚠ ${r.warning}`] : []),
-    ...(r.kind === 'web' ? ['Needs Workspace Trust to run unless it declares that it supports untrusted workspaces.'] : []),
+    ...(r.kind !== 'declarative' ? ['Needs Workspace Trust to run unless it declares that it supports untrusted workspaces.'] : []),
   ].join('\n')
 }
 
@@ -311,7 +311,7 @@ function installedCard(ext: Installed): HTMLElement {
     name: m.displayName ?? m.name,
     tag: ext.signed ? sourceLabel(ext.source) : `${sourceLabel(ext.source)} · unsigned`,
     desc: m.description ?? '',
-    meta: `${m.publisher} · ${ext.version} · ${ext.kind === 'web' ? 'web extension' : 'declarative'}`,
+    meta: `${m.publisher} · ${ext.version} · ${ext.kind === 'web' ? 'web extension' : ext.kind === 'node' ? 'Node.js extension' : ext.kind === 'both' ? 'web + Node.js extension' : 'declarative'}`,
     warn: reason ?? ext.warning,
     foot: [label, button('Uninstall', () => void uninstall(ext))],
   })
@@ -333,13 +333,19 @@ async function uninstall(ext: Installed): Promise<void> {
   }
 }
 
+/** What a listing needs: a Node-only one is fine once the Node.js runtime is installed (Code never installs it). */
+const runState = (id: string): Runnable | undefined => {
+  const s = runs.get(id)
+  return s === 'node' && store.nodeRuntime() ? 'web' : s
+}
+
 function installButton(l: Listing): HTMLButtonElement {
-  const state = runs.get(l.id)
+  const state = runState(l.id)
   const b = button(installing.has(l.id) ? 'Installing…' : 'Install', () => void installListing(l))
   if (state === 'node') {
     b.disabled = true
     b.classList.add('unavailable')
-    b.title = NODE_ONLY
+    b.title = NEEDS_NODE
   } else if (installing.has(l.id)) b.disabled = true
   else if (!state) b.disabled = true // still being checked
   return b
@@ -357,7 +363,7 @@ function resultCard(l: Listing): HTMLElement {
     foot: [have ? Object.assign(document.createElement('span'), { textContent: have.version === l.version ? '✓ Installed' : `Installed ${have.version}` }) : installButton(l)],
     art: l.iconUrl,
   })
-  if (runs.get(l.id) === 'node') el.classList.add('unavailable')
+  if (runState(l.id) === 'node') el.classList.add('unavailable')
   resultEls.set(l.id, el)
   return el
 }
@@ -460,8 +466,8 @@ const detailActions: import('./vsxdetail').DetailActions = {
   uninstall: (e) => void uninstall(e),
   setEnabled: (e, on) => void store.setEnabled(e.id, on),
   installing: (id) => installing.has(id),
-  runnable: (id) => runs.get(id),
-  nodeOnly: NODE_ONLY,
+  runnable: (id) => runState(id),
+  nodeOnly: NEEDS_NODE,
 }
 
 export function detailTitle(id: string): string {

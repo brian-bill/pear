@@ -1,4 +1,4 @@
-/** `tiny.search`: indexing and querying (`contracts/search.md`). */
+/** `tiny.search`: indexing and querying. */
 import { expect, test } from './fixtures'
 
 test.use({ system: true, helpers: true })

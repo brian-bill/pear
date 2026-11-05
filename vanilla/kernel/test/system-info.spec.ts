@@ -1,4 +1,4 @@
-/** `tiny.system`: facts about the OS and the host (`contracts/system-info.md`). */
+/** `tiny.system`: facts about the OS and the host. */
 import { expect, test } from './fixtures'
 
 test.use({ system: true, helpers: true })
@@ -21,7 +21,9 @@ test('version, capabilities, uptime, install id and host name come from the syst
     }
   })
   expect(out.version).toEqual({ name: 'Pear', version: '1.0', build: '1.0.0', kernel: 'Vanilla 1.0' })
-  expect(Object.keys(out.caps.contracts)).toHaveLength(21)
+  expect(Object.keys(out.caps.contracts)).toHaveLength(22)
+  expect(out.caps.contracts.runtimes).toBe(1)
+  expect(out.caps.runtimes).toEqual([])
   expect(out.uptime).toBeGreaterThan(0)
   expect(out.id1).toMatch(/^[0-9a-f-]{36}$/)
   expect(out.id2).toBe(out.id1)

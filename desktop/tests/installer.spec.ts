@@ -1,4 +1,4 @@
-/** Installing apps from a package file or a link (`contracts/app-distribution.md`): the App Installer. */
+/** Installing apps from a package file or a link: the App Installer. */
 import type { Page } from '@playwright/test'
 import { expect, test, type Desktop } from './fixtures'
 

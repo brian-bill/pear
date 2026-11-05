@@ -1,4 +1,4 @@
-/// A small same-origin CORS/mixed-content proxy for `tiny.network` (`contracts/network.md`). A page cannot read a
+/// A small same-origin CORS/mixed-content proxy for `tiny.network`. A page cannot read a
 /// cross-origin response without the site's permission, and an HTTPS page cannot fetch HTTP at all; Safari retries
 /// those requests here. The endpoint is deliberately boring: it forwards one http(s) URL and streams the reply.
 ///

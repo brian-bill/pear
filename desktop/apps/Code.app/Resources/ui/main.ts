@@ -1175,7 +1175,6 @@ function themeMenu(at: { x: number; y: number }): void {
 }
 
 
-// ---- commands and keybindings (contracts/code-extensions.md; keys follow VS Code's defaults)
 interface Command { title: string; run(args?: unknown): unknown; hidden?: boolean }
 const commands = new Map<string, Command>()
 const reg = (id: string, title: string, run: Command['run'], hidden = false): void => void commands.set(id, { title, run, hidden })

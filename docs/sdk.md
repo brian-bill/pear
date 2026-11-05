@@ -7,7 +7,7 @@ How to write an app for Pear. The apps that ship with Pear (Finder, Terminal, Te
 
 ## What an app is
 
-An app is a Vanilla **bundle** (`Name.app/`, see `contracts/app-bundles.md`) with a window UI:
+An app is a Vanilla **bundle** (`Name.app/`) with a window UI:
 
 ```
 Notes.app/
@@ -67,17 +67,17 @@ await tiny.ready            // resolves when Desktop has sent the window its ide
 
 ### Files, settings, permissions, launching: `tiny.<call>`
 
-Everything a Vanilla process can do (`contracts/filesystem.md`, `configuration.md`, `launch-services.md`), returning promises: `readFile writeFile writeFileAtomic readdir stat lstat exists mkdir rmdir unlink removeAll rename copy trash restore emptyTrash symlink readlink realpath chmod chown utimes statfs getxattr setxattr listxattr removexattr open close read write lseek truncate flock configGet configSet configList configWatch permCheck permRequest launchOpen launchApps launchAppsFor launchDefaultFor launchTypeOf launchIconFor launchRecents bundleList bundleInfo spawn pipe openpty ...` (see `vanilla/kernel/src/runtime.ts`, minus process control and ports). Errors carry a Vanilla errno in `code` (`ENOENT`, `EACCES`, `EEXIST`...). Binary data is `Uint8Array`.
+Everything a Vanilla process can do, returning promises: `readFile writeFile writeFileAtomic readdir stat lstat exists mkdir rmdir unlink removeAll rename copy trash restore emptyTrash symlink readlink realpath chmod chown utimes statfs getxattr setxattr listxattr removexattr open close read write lseek truncate flock configGet configSet configList configWatch permCheck permRequest launchOpen launchApps launchAppsFor launchDefaultFor launchTypeOf launchIconFor launchRecents bundleList bundleInfo spawn pipe openpty ...` (see `vanilla/kernel/src/runtime.ts`, minus process control and ports). Errors carry a Vanilla errno in `code` (`ENOENT`, `EACCES`, `EEXIST`...). Binary data is `Uint8Array`.
 
 `tiny.readFile('/Users/pear/Documents/a.txt')`, `tiny.trash(path)`, `tiny.stat(path)` (`kind` is `file | dir | symlink`, times in ms), `tiny.readdir(dir)` (`[{name, kind, ino}]`).
 
 ### Services: `tiny.service(name, msg)`
 
-Request/reply to a system service as this app: `tiny.service('tiny.search', {op: 'query', q: 'report'})`, `tiny.service('tiny.clipboard', ...)`, `tiny.service('tiny.notifications', {op: 'post', title, body})`, `tiny.service('tiny.settings', ...)`, `tiny.service('tiny.network', {op: 'fetch', url})`, `tiny.service('tiny.audio', ...)`. The request set of each service is in `contracts/*.md` ("Implementation status"). `tiny.system.info('snapshot')` is shorthand for `tiny.system` reads.
+Request/reply to a system service as this app: `tiny.service('tiny.search', {op: 'query', q: 'report'})`, `tiny.service('tiny.clipboard', ...)`, `tiny.service('tiny.notifications', {op: 'post', title, body})`, `tiny.service('tiny.settings', ...)`, `tiny.service('tiny.network', {op: 'fetch', url})`, `tiny.service('tiny.audio', ...)`. `tiny.system.info('snapshot')` is shorthand for `tiny.system` reads.
 
 ### Network: `net` (needs the `network` permission)
 
-`net.fetch(url, init?)` -> standard `Response` (HTTP errors are responses; offline is `ENETUNREACH`, a browser-blocked request is `EACCES`), `net.status()`, `net.subscribe(fn)` (online/offline/connection), `net.download(url, destPath)` (to your container or `~/Downloads`), `net.upload(path, url, init?)`. Also `tiny.net`. `fetch` also takes `proxy` and `timeout`. Windows have no network of their own, so plain `fetch()` in an app does not work; use `net.fetch`. WebSockets and download progress events are not available from windows yet (they need a port); call `tiny.service('tiny.network', ...)` for the rest of `contracts/network.md`.
+`net.fetch(url, init?)` -> standard `Response` (HTTP errors are responses; offline is `ENETUNREACH`, a browser-blocked request is `EACCES`), `net.status()`, `net.subscribe(fn)` (online/offline/connection), `net.download(url, destPath)` (to your container or `~/Downloads`), `net.upload(path, url, init?)`. Also `tiny.net`. `fetch` also takes `proxy` and `timeout`. Windows have no network of their own, so plain `fetch()` in an app does not work; use `net.fetch`. WebSockets and download progress events are not available from windows yet (they need a port); call `tiny.service('tiny.network', ...)` for the rest.
 
 ### Windows: `tiny.window`
 
@@ -117,7 +117,7 @@ Document apps: handle both `tiny.app.args` at startup and `onOpenFile` later; a 
 
 ### Admin: `tiny.admin` (Settings, Activity Monitor, Console, Finder only)
 
-`tiny.admin.kernel('permList')`, `tiny.admin.kernel('configSet', domain, key, value)`, `tiny.admin.service('tiny.network', {op: 'rules.set', ...})`, `tiny.admin.service('tiny.sources', {op: 'list'})` (app sources; system only, see `contracts/app-registry.md`): calls that run as the system. Allowed kernel calls are listed in `src/apphost.ts` (`ADMIN_KERNEL`). Other apps get `EPERM`.
+`tiny.admin.kernel('permList')`, `tiny.admin.kernel('configSet', domain, key, value)`, `tiny.admin.service('tiny.network', {op: 'rules.set', ...})`, `tiny.admin.service('tiny.sources', {op: 'list'})` (app sources; system only): calls that run as the system. Allowed kernel calls are listed in `src/apphost.ts` (`ADMIN_KERNEL`). Other apps get `EPERM`.
 
 ### Helpers
 

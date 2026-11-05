@@ -4,9 +4,10 @@ import type { ProcessHost } from './hosting'
 import { request, type Message, type SendOptions } from './ipc'
 import type { Termios, WinSize } from './pty'
 import { INIT_PID, ProcessTable, type ExitStatus, type HeartbeatOptions, type KernelEvent, type ProcessInfo, type Signal, type SpawnOptions, type SystemContext } from './process'
-import { BundleManager, OS_VERSION, type BundleInfo, type BundleSource, type VerifyResult } from './bundle'
+import { BundleManager, OS_VERSION, type BundleInfo, type BundleSource, type Requirement, type VerifyResult } from './bundle'
 import { Config, WELL_KNOWN, type ConfigScope, type ConfigValue, type Schema } from './config'
 import { LaunchServices, type AppRecord, type IconInfo, type OpenOptions, type RecentItem, type RunningApp } from './launch'
+import { RuntimeRegistry, type FrameworkInfo, type RuntimeInfo, type RuntimeQuery, type Unmet } from './runtimes'
 import { Permissions, type AuditEntry, type Capability, type Grant, type Status } from './perm'
 import { bootSystem, SESSION_MARK, type BootInfo, type SystemOptions } from './system'
 import { TypeRegistry, type TypeInfo } from './uti'
@@ -69,13 +70,17 @@ export class Kernel {
     const bundles: BundleManager = new BundleManager(fs, users, types, emit, {
       running: (id) => procs.pidsOf(id),
       quit: (id) => quitApp(procs, id),
+      prepare: (manifest) => runtimes.checkInstall(manifest),
+      changed: () => runtimes.sync(),
     })
+    const runtimes = new RuntimeRegistry(fs, bundles, types)
     const perms = new Permissions(fs, users, (id) => bundles.find(id), (e) => {
       emit(e)
       if (e.event === 'changed' && e.status !== 'granted') procs.enforce(e.appId)
     }, { promptTimeout: opts.promptTimeout })
     const launch = new LaunchServices(fs, procs, bundles, types, config, perms, users, emit)
-    const sys: SystemContext = { perms, users, config, bundles, launch }
+    launch.runtimes = runtimes
+    const sys: SystemContext = { perms, users, config, bundles, launch, runtimes }
     procs.system = sys
     config.onChange((change) => {
       emit({ type: 'config', event: 'changed', change })
@@ -294,7 +299,7 @@ export class Kernel {
     await this.provenance.delete(id).catch(() => {})
   }
 
-  // ---- app packages (`contracts/app-distribution.md`)
+  // ---- app packages
 
   private packagerImpl: Packager | undefined
   private get packager(): Packager {
@@ -346,6 +351,21 @@ export class Kernel {
   bundleInfo = async (id: string): Promise<BundleInfo> => this.sys.bundles.info(id)
   bundleVerify = (path: string): Promise<VerifyResult> => this.sys.bundles.verify(path)
   /** Look at the install locations again (after files were added by hand). Returns what could not be used, by path. */
+  // ---- language runtimes and frameworks
+
+  runtimeList = async (): Promise<RuntimeInfo[]> => this.sys.runtimes.list()
+  runtimeInfo = async (name: string, range?: string): Promise<RuntimeInfo | null> => this.sys.runtimes.info(name, range)
+  runtimeResolve = async (query: RuntimeQuery): Promise<RuntimeInfo | null> => this.sys.runtimes.resolve(query)
+  /** Choose which installed bundle a runtime name resolves to. */
+  runtimeSetDefault = (name: string, bundleId: string): Promise<void> => this.sys.runtimes.setDefault(name, bundleId)
+  runtimeEmbed = async (name: string, opts: { range?: string } = {}) => this.sys.runtimes.embed(name, opts.range)
+  /** Requirements (a bundle's `requires`) that nothing installed satisfies: for the install review. */
+  runtimeUnmet = async (requires: Requirement[]): Promise<Unmet[]> => this.sys.runtimes.unmet(requires)
+  /** Commands two runtimes both wanted (the first installed keeps it). */
+  runtimeConflicts = async () => [...this.sys.runtimes.conflicts]
+  frameworkList = async (): Promise<FrameworkInfo[]> => this.sys.runtimes.frameworks()
+  frameworkResolve = async (name: string, opts: { range?: string } = {}): Promise<FrameworkInfo | null> => this.sys.runtimes.framework(name, opts.range)
+
   bundleRescan = async (): Promise<Record<string, string>> => {
     await this.sys.bundles.scan()
     return Object.fromEntries(this.sys.bundles.invalid)
@@ -432,6 +452,7 @@ export const KERNEL_METHODS = [
   'diagSnapshot', 'traceStart', 'traceMark', 'traceMeasure', 'traceStop', 'bootMarks',
   'bootInfo', 'configGet', 'configSet', 'configDelete', 'configList', 'configReset', 'configRegister', 'configDomains', 'configExternal', 'configFlush',
   'bundleInstall', 'bundleUpdate', 'bundleUninstall', 'bundlePackage', 'bundleCheck', 'bundleInspectArchive', 'bundleInstallArchive', 'bundleInstalledFrom', 'bundleList', 'bundleInfo', 'bundleVerify', 'bundleRescan',
+  'runtimeList', 'runtimeInfo', 'runtimeResolve', 'runtimeSetDefault', 'runtimeEmbed', 'runtimeUnmet', 'runtimeConflicts', 'frameworkList', 'frameworkResolve',
   'launchOpen', 'launchOpenWith', 'launchApps', 'launchAppsFor', 'launchDefaultFor', 'launchSetDefault', 'launchTypeOf', 'launchRunning', 'launchActivate', 'launchRecents', 'launchIconFor', 'launchTypeConflicts', 'launchSetTypeOwner',
   'permList', 'permStatus', 'permGrant', 'permRevoke', 'permReset', 'permSetPrompter', 'permRespond', 'permPickerGrant', 'permAudit',
 ] as const

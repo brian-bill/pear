@@ -1,4 +1,4 @@
-/// App packages, `.pearapp` (`contracts/app-distribution.md`): one `*.app` bundle in one file, to download, send, or
+/// App packages, `.pearapp`: one `*.app` bundle in one file, to download, send, or
 /// install from a link. The container and record engine are the disk image's (`container.ts`); what differs is the
 /// header (the manifest and a per-file hash list) and that the body holds exactly one bundle root.
 ///
@@ -99,7 +99,7 @@ const bad = (message: string): never => {
 }
 const join = (a: string, b: string) => (a === '/' ? `/${b}` : `${a}/${b}`)
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
-const ROOT = /^[^/\\\0]{1,200}\.app$/
+const ROOT = /^[^/\\\0]{1,200}\.(app|framework)$/
 const HEX64 = /^[0-9a-f]{64}$/
 
 function safeRelative(path: unknown): string {
@@ -215,7 +215,7 @@ export class Packager {
     if (failed || !g.manifest || !g.finalRaw) {
       throw new SysError(failed?.id === 'manifest' ? 'ENOENT' : 'EINVAL', failed?.message ?? 'the project cannot be packaged', project)
     }
-    const root = dirName(g.manifest.name)
+    const root = dirName(g.manifest.name, g.manifest.kind)
     g.files.set('manifest.json', enc.encode(`${JSON.stringify(g.finalRaw, null, 2)}\n`))
     const names = [...g.files.keys()].sort((a, b) => (a === 'manifest.json' ? -1 : b === 'manifest.json' ? 1 : a < b ? -1 : 1))
     const listed: PackageHeader['files'] = []

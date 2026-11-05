@@ -9,7 +9,7 @@ const TIMEOUT = 30_000
 
 /**
  * `tiny.installer`: fetch what a link points at, and check it, for the Desktop's install prompt
- * (`contracts/app-distribution.md`). A `.pearapp` comes back as bytes (the kernel verifies it when it is installed); a
+ *. A `.pearapp` comes back as bytes (the kernel verifies it when it is installed); a
  * served directory comes back as its files, every one checked against the manifest's hashes. Nothing is installed here:
  * a process cannot install bundles, and the prompt has to come first. System only.
  */

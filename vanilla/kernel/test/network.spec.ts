@@ -1,4 +1,4 @@
-/** `tiny.network`: outbound HTTP and WebSocket through the page (`contracts/network.md`). */
+/** `tiny.network`: outbound HTTP and WebSocket through the page. */
 import { expect, test } from './fixtures'
 
 test.use({ system: true, helpers: true })

@@ -3,7 +3,7 @@ import { apps, attempt, button, cfgList, cfgSet, choose, group, h, line, say, sy
 
 const CAP_NAMES: Record<string, string> = {
   'fs.user': 'Files', 'fs.picker': 'Picked files', 'fs.all': 'Full disk', clipboard: 'Clipboard', notifications: 'Notifications', 'audio.input': 'Microphone',
-  'video.input': 'Camera', network: 'Network', location: 'Location', 'process.spawn': 'Run programs', 'display.capture': 'Screen recording',
+  'video.input': 'Camera', network: 'Network', location: 'Location', 'process.spawn': 'Run programs', 'display.capture': 'Screen recording', loopback: 'Local servers',
 }
 interface Grant { appId: string; capability: string; status: 'granted' | 'denied' | 'prompt' }
 interface Audit { time: number; event: string; appId: string | null; capability?: string; path?: string; call?: string; detail?: string }

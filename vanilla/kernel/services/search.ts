@@ -202,7 +202,7 @@ function convert(q: string): string | null {
 }
 
 /**
- * `tiny.search`: indexing and querying of files, apps and provider content (`contracts/search.md`).
+ * `tiny.search`: indexing and querying of files, apps and provider content.
  *
  * The index (names, type, size, dates, tags, content words for small text files) is built by walking `/Users` and
  * `/Applications`, kept current from the file system's change feed, and saved under `/System/Library/Search`. Queries

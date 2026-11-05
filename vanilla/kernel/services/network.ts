@@ -48,7 +48,7 @@ const hostMatches = (host: string, pattern: string) =>
   pattern.startsWith('*.') ? host === pattern.slice(2) || host.endsWith(pattern.slice(1)) : host === pattern
 
 /**
- * `tiny.network`: outbound HTTP and WebSocket for apps (`contracts/network.md`). Processes cannot reach the network
+ * `tiny.network`: outbound HTTP and WebSocket for apps. Processes cannot reach the network
  * themselves (their sandbox forbids it), so every request goes through this service, which checks the `network`
  * capability and the user's per-app rules, and asks the page's driver to do the actual fetch. Browser limits apply:
  * CORS, mixed content, no raw sockets.

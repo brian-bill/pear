@@ -16,6 +16,7 @@ import type { UserDb } from './users'
 import { ROOT_CREDS, type Credentials } from './users'
 import { Packager } from './pearapp'
 import { OS_VERSION } from './bundle'
+import { SHIM_MARK, type RuntimeInfo, type RuntimeRegistry } from './runtimes'
 import { sha256Hex, verifySignature } from './sources'
 
 const SIGNAL_NAMES = ['SIGHUP', 'SIGINT', 'SIGTERM', 'SIGKILL', 'SIGUSR1', 'SIGUSR2', 'SIGPIPE', 'SIGWINCH', 'SIGTSTP'] as const
@@ -112,6 +113,8 @@ export interface SpawnOptions {
    * Only init and root may set it.
    */
   bundle?: { id: string; kind: BundleKind; trusted?: boolean }
+  /** Run the program with this installed language runtime (`node`, `php`) instead of as a Pear program. */
+  runtime?: string
 }
 
 export type KernelEvent =
@@ -213,8 +216,10 @@ export interface SystemContext {
   config: Config
   bundles: BundleManager
   launch: LaunchServices
+  runtimes: RuntimeRegistry
 }
 
+const decoder = new TextDecoder()
 const append = (buf: string, data: string) => (buf + data).slice(-OUTPUT_CAP)
 /** Root outside any app sandbox. */
 const isSystem = (p: { uid: number; appId: string | null }) => p.uid === 0 && !p.appId
@@ -280,7 +285,11 @@ export class ProcessTable {
     }
     const stat = await this.fs.stat(cwd)
     if (stat.kind !== 'dir') throw new SysError('ENOTDIR', undefined, cwd)
-    const source = await this.fs.readFile(full) // ENOENT / EISDIR come from the engine
+    let source = await this.fs.readFile(full) // ENOENT / EISDIR come from the engine
+    let args = opts.args ?? []
+    let loaderEnv: Record<string, string> = {}
+    const hop = await this.resolveProgram(full, source, args, opts)
+    if (hop) ({ source, args, env: loaderEnv } = hop)
 
     this.checkProcessLimit()
 
@@ -291,8 +300,8 @@ export class ProcessTable {
       ppid: parent,
       name: opts.name ?? full.split('/').pop() ?? full,
       path: full,
-      args: opts.args ?? [],
-      env: { ...(parentProc?.env ?? { PATH: '/bin:/Applications', HOME: '/' }), ...opts.env },
+      args,
+      env: { ...(parentProc?.env ?? { PATH: '/bin:/usr/local/bin:/Applications', HOME: '/' }), ...opts.env, ...loaderEnv },
       cwd,
       host: null as unknown as HostHandle, // set below, once the container exists
       port: port1,
@@ -361,6 +370,61 @@ export class ProcessTable {
     proc.host.onerror = (message) => void this.finish(proc, { code: null, signal: null, crashed: true, error: message })
     this.emit({ type: 'process', event: 'spawned', pid, ppid: parent, name: proc.name })
     return pid
+  }
+
+  /**
+   * Universal loading: decide whether `path` is run by something other than itself.
+   * Order: a runtime asked for in `opts.runtime`; a command shim; `#!` with an interpreter an installed runtime
+   * answers to (or a Pear program in `/bin`); a file whose extension a runtime handles and that is not itself a
+   * Pear program. Anything else is a Pear program (an ES module with a default export) and returns null.
+   * The result replaces the program source with the runtime's launcher and says what it is to be started with.
+   */
+  private async resolveProgram(path: string, source: Uint8Array, args: string[], opts: SpawnOptions): Promise<{ source: Uint8Array; args: string[]; env: Record<string, string> } | null> {
+    const rt = this.system?.runtimes
+    if (!rt) return null
+    const launch = async (info: RuntimeInfo, mode: 'command' | 'script', argv: string[]) => {
+      const unmet = rt.unmet(info.requires)
+      if (unmet.length) throw new SysError('ENOENT', `${info.bundleName} needs ${unmet.map((u) => `${u.kind} ${u.name} ${u.range} (${u.reason})`).join(', ')}`)
+      const env: Record<string, string> = { PEAR_RUNTIME: info.name, PEAR_RUNTIME_VERSION: info.version, PEAR_RUNTIME_DIR: `${info.path}/`, PEAR_RUNTIME_MODE: mode }
+      const fw = rt.frameworksFor(info.requires)
+      if (Object.keys(fw).length) env.PEAR_FRAMEWORKS = JSON.stringify(fw)
+      return { source: await this.fs.readFile(info.launcher), args: argv, env }
+    }
+    const missing = (what: string) => new SysError('ENOENT', `no runtime provides ${what}; add one in Settings > Runtimes`)
+
+    if (opts.runtime !== undefined && opts.runtime !== 'pear') {
+      const info = rt.resolve({ name: opts.runtime })
+      if (!info) throw missing(`"${opts.runtime}"`)
+      return launch(info, 'script', [path, ...args])
+    }
+    const head = decoder.decode(source.subarray(0, 512))
+    if (head.startsWith('#!')) {
+      const line = head.slice(2).split('\n')[0]!.trim()
+      if (head.startsWith(SHIM_MARK)) {
+        const name = line.slice(SHIM_MARK.length - 2).trim()
+        const info = rt.resolve({ name })
+        if (!info) throw missing(`"${name}"`)
+        return launch(info, 'command', args)
+      }
+      const words = line.split(/\s+/)
+      let interp = words[0]!.slice(words[0]!.lastIndexOf('/') + 1)
+      if (interp === 'env') interp = words.slice(1).find((w) => !w.startsWith('-') && !w.includes('=')) ?? ''
+      const info = interp ? rt.resolve({ shebang: interp }) : null
+      if (info) return launch(info, 'script', [path, ...args])
+      // Not a language runtime: a Pear program in /bin can interpret it (`#!/bin/sh`).
+      const bin = interp ? `/bin/${interp}` : ''
+      if (bin && bin !== path && (await this.fs.exists(bin))) return { source: await this.fs.readFile(bin), args: [path, ...args], env: {} }
+      throw missing(`"${interp || line}" (the interpreter named by ${path})`)
+    }
+    const dot = path.lastIndexOf('.')
+    if (dot > path.lastIndexOf('/') + 1 && rt.handlesExtension(path.slice(dot + 1).toLowerCase())) {
+      // A Pear program is an ES module with a default export; anything else with a handled extension is a script.
+      if (!/\bexport\s+default\b|\bas\s+default\b/.test(decoder.decode(source))) {
+        const info = rt.resolve({ path })
+        if (info) return launch(info, 'script', [path, ...args])
+      }
+    }
+    return null
   }
 
   private checkProcessLimit(): void {
@@ -907,6 +971,24 @@ export class ProcessTable {
       case 'configUnwatch':
         this.configWatchers = this.configWatchers.filter((w) => !(w.pid === proc.pid && w.port === args[0]))
         return null
+      case 'runtimeList':
+        return sys.runtimes.list()
+      case 'runtimeInfo':
+        return sys.runtimes.info(str(args[0], 'name'), typeof args[1] === 'string' ? args[1] : (args[1] as { range?: string } | undefined)?.range)
+      case 'runtimeResolve': {
+        const q = args[0] as Record<string, unknown> | undefined
+        if (!q || typeof q !== 'object' || !['name', 'command', 'shebang', 'path'].some((k) => typeof q[k] === 'string')) throw new SysError('EINVAL', 'resolve needs {name}, {command}, {shebang} or {path}')
+        return sys.runtimes.resolve(q as never)
+      }
+      case 'runtimeEmbed':
+        return sys.runtimes.embed(str(args[0], 'name'), (args[1] as { range?: string } | undefined)?.range)
+      case 'runtimeUnmet':
+        if (!Array.isArray(args[0])) throw new SysError('EINVAL', 'requirements must be a list')
+        return sys.runtimes.unmet(args[0] as never)
+      case 'frameworkList':
+        return sys.runtimes.frameworks()
+      case 'frameworkResolve':
+        return sys.runtimes.framework(str(args[0], 'name'), (args[1] as { range?: string } | undefined)?.range)
       case 'permCheck':
         return sys.perms.check(this.subject(this.actor(proc, lastOpts(2))), str(args[0], 'capability'), args[1] as string | undefined)
       case 'permRequest':
@@ -1142,6 +1224,7 @@ export class ProcessTable {
       }
       case 'configGet': case 'configSet': case 'configDelete': case 'configList': case 'configReset': case 'configWatch': case 'configUnwatch':
       case 'permCheck': case 'permRequest': case 'permList':
+      case 'runtimeList': case 'runtimeInfo': case 'runtimeResolve': case 'runtimeEmbed': case 'runtimeUnmet': case 'frameworkList': case 'frameworkResolve':
       case 'bundleList': case 'bundleInfo': case 'cryptoDigest': case 'cryptoVerify': case 'bundlePackage': case 'bundleCheck':
       case 'launchOpen': case 'launchOpenWith': case 'launchApps': case 'launchAppsFor': case 'launchDefaultFor': case 'launchSetDefault':
       case 'launchTypeOf': case 'launchRunning': case 'launchActivate': case 'launchRecents': case 'launchIconFor': case 'launchTypeConflicts':

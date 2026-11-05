@@ -5,14 +5,49 @@ import type { FileSystem } from './fs'
 import { CAPABILITIES, type Capability } from './perm'
 import type { TypeRegistry } from './uti'
 import type { UserDb } from './users'
+import { validRange } from './semver'
 
 export const OS_VERSION = '1.0'
 export const SYSTEM_APPS = '/System/Applications'
 export const APPS = '/Applications'
-/** Where bundles may live. Only the system installs into `/System/Applications`. */
+export const SYSTEM_FRAMEWORKS = '/System/Library/Frameworks'
+export const FRAMEWORKS = '/Library/Frameworks'
+/** Where bundles may live. Only the system installs into `/System/...`. */
 const BUNDLE_ROOTS = [SYSTEM_APPS, APPS]
+const FRAMEWORK_ROOTS = [SYSTEM_FRAMEWORKS, FRAMEWORKS]
 
-export type BundleKind = 'app' | 'service' | 'tool'
+export type BundleKind = 'app' | 'service' | 'tool' | 'runtime' | 'framework'
+
+/** What a `kind: "runtime"` bundle offers (`provides` in the manifest). */
+export interface RuntimeProvides {
+  /** `node`, `php`, `python`: what `requires` and `runtime.resolve` name. */
+  name: string
+  /** Version of the language runtime, not of the bundle. */
+  version: string
+  /** Ways it can be used: `program`, `embed`; others are carried and ignored. */
+  abi: string[]
+  commands: string[]
+  shebangs: string[]
+  handles: Array<{ ext: string[]; uti?: string }>
+  /** Script inside the bundle an embedding app loads. */
+  embed?: string
+}
+
+/** What a `kind: "framework"` bundle offers. */
+export interface FrameworkProvides {
+  framework: string
+  version: string
+  api?: string
+  /** Library module inside the bundle (also its `entry`). */
+  module: string
+}
+
+/** A runtime or framework a bundle needs (`requires` in the manifest). */
+export interface Requirement {
+  runtime?: string
+  framework?: string
+  range: string
+}
 export interface DocumentType {
   ext: string[]
   role: 'viewer' | 'editor' | 'none'
@@ -55,6 +90,12 @@ export interface Manifest {
   /** Desktop only: how windows of the app start. */
   window?: WindowHints
   permissions: Capability[]
+  /** Runtime and framework bundles: what they offer. */
+  provides?: RuntimeProvides | FrameworkProvides
+  /** Runtimes and frameworks this bundle needs. */
+  requires: Requirement[]
+  /** The language runtime that runs `entry` (not `pear`). */
+  runtime?: string
   documentTypes: DocumentType[]
   typeDefinitions: TypeDefinition[]
   urlSchemes: string[]
@@ -121,6 +162,67 @@ const extensions = (v: unknown, what: string): string[] => {
 
 const majorOf = (v: string) => parseInt(v, 10)
 
+const NAME = /^[a-z][a-z0-9-]{0,31}$/
+const COMMAND = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,31}$/
+
+const names = (v: unknown, re: RegExp, what: string): string[] => {
+  if (v === undefined) return []
+  if (!Array.isArray(v) || v.some((x) => typeof x !== 'string' || !re.test(x))) bad(`${what} must be a list of plain names`)
+  return [...new Set(v as string[])]
+}
+
+function parseProvides(kind: BundleKind, raw: unknown): RuntimeProvides | FrameworkProvides | undefined {
+  if (kind !== 'runtime' && kind !== 'framework') {
+    if (raw !== undefined) bad('only runtime and framework bundles have provides')
+    return undefined
+  }
+  if (!isObject(raw)) return bad(`a ${kind} bundle needs provides`)
+  if (typeof raw.version !== 'string' || !VERSION.test(raw.version)) bad('provides.version must look like 20.18.0')
+  if (kind === 'framework') {
+    if (typeof raw.framework !== 'string' || !NAME.test(raw.framework)) bad('provides.framework must be a lowercase name')
+    return {
+      framework: raw.framework as string,
+      version: raw.version as string,
+      ...(typeof raw.api === 'string' ? { api: raw.api } : {}),
+      module: relative(raw.module, 'provides.module'),
+    }
+  }
+  if (typeof raw.name !== 'string' || !NAME.test(raw.name)) bad('provides.name must be a lowercase name like node')
+  const handles: RuntimeProvides['handles'] = []
+  if (raw.handles !== undefined && !Array.isArray(raw.handles)) bad('provides.handles must be a list')
+  for (const h of (raw.handles ?? []) as Array<Record<string, unknown>>) {
+    if (!isObject(h)) bad('provides.handles entries must be objects')
+    if (h.uti !== undefined && typeof h.uti !== 'string') bad('provides.handles[].uti must be a string')
+    const ext = extensions(h.ext ?? [], 'provides.handles[].ext')
+    if (!ext.length && !h.uti) bad('a handled type needs ext or uti')
+    handles.push({ ext, ...(h.uti ? { uti: h.uti as string } : {}) })
+  }
+  return {
+    name: raw.name as string,
+    version: raw.version as string,
+    abi: names(raw.abi ?? ['program'], NAME, 'provides.abi'),
+    commands: names(raw.commands, COMMAND, 'provides.commands'),
+    shebangs: names(raw.shebangs, COMMAND, 'provides.shebangs'),
+    handles,
+    ...(raw.embed !== undefined ? { embed: relative(raw.embed, 'provides.embed') } : {}),
+  }
+}
+
+function parseRequires(raw: unknown): Requirement[] {
+  if (raw === undefined) return []
+  if (!Array.isArray(raw)) bad('requires must be a list')
+  return (raw as unknown[]).map((r) => {
+    if (!isObject(r)) return bad('requires entries must be objects')
+    const { runtime, framework } = r
+    if ((runtime === undefined) === (framework === undefined)) bad('a requirement names either a runtime or a framework')
+    const name = runtime ?? framework
+    if (typeof name !== 'string' || !NAME.test(name)) bad('a requirement needs a lowercase name')
+    const range = r.range ?? '*'
+    if (typeof range !== 'string' || !validRange(range)) bad(`requires: "${String(range)}" is not a version range`)
+    return runtime !== undefined ? { runtime: name as string, range: range as string } : { framework: name as string, range: range as string }
+  })
+}
+
 /** Check `manifest.json` content. Does not look at the files it names. */
 export function parseManifest(text: string): Manifest {
   let raw: Record<string, unknown>
@@ -138,8 +240,11 @@ export function parseManifest(text: string): Manifest {
   if (raw.minOS !== undefined && (typeof raw.minOS !== 'string' || !VERSION.test(raw.minOS))) bad('minOS must look like 1.0')
   if (raw.minOS && majorOf(raw.minOS as string) > majorOf(OS_VERSION)) bad(`requires OS ${raw.minOS}, this is ${OS_VERSION}`)
   const kind = (raw.kind ?? 'app') as BundleKind
-  if (!['app', 'service', 'tool'].includes(kind)) bad('kind must be app, service, or tool')
-  const entry = relative(raw.entry ?? 'main.js', 'entry')
+  if (!['app', 'service', 'tool', 'runtime', 'framework'].includes(kind)) bad('kind must be app, service, tool, runtime, or framework')
+  const provides = parseProvides(kind, raw.provides)
+  const entry = relative(kind === 'framework' ? (provides as FrameworkProvides).module : (raw.entry ?? 'main.js'), 'entry')
+  if (raw.runtime !== undefined && (typeof raw.runtime !== 'string' || !NAME.test(raw.runtime))) bad('runtime must be a lowercase name like node (or pear)')
+  if (raw.runtime !== undefined && raw.runtime !== 'pear' && kind !== 'app' && kind !== 'tool') bad('only apps and tools can name a runtime')
   const icon = raw.icon === undefined ? undefined : relative(raw.icon, 'icon')
   const ui = raw.ui === undefined ? undefined : relative(raw.ui, 'ui')
   let windowHints: WindowHints | undefined
@@ -208,10 +313,13 @@ export function parseManifest(text: string): Manifest {
     ...(ui ? { ui } : {}),
     ...(windowHints ? { window: windowHints } : {}),
     permissions: [...new Set(permissions as Capability[])],
+    ...(provides ? { provides } : {}),
+    requires: parseRequires(raw.requires),
+    ...(typeof raw.runtime === 'string' && raw.runtime !== 'pear' ? { runtime: raw.runtime } : {}),
     documentTypes,
     typeDefinitions,
     urlSchemes: urlSchemes as string[],
-    singleInstance: typeof raw.singleInstance === 'boolean' ? raw.singleInstance : kind !== 'tool',
+    singleInstance: typeof raw.singleInstance === 'boolean' ? raw.singleInstance : kind === 'app' || kind === 'service',
     autostart: raw.autostart === true && kind === 'service',
     hashes,
   }
@@ -222,7 +330,7 @@ export async function sha256(data: Uint8Array): Promise<string> {
   return [...digest].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
-export const dirName = (name: string) => `${name.replace(/[\\:*?"<>|\0]/g, '-')}.app`
+export const dirName = (name: string, kind: BundleKind = 'app') => `${name.replace(/[\\:*?"<>|\0]/g, '-')}.${kind === 'framework' ? 'framework' : 'app'}`
 const join = (a: string, b: string) => (a === '/' ? `/${b}` : `${a}/${b}`)
 
 interface BundleHooks {
@@ -230,6 +338,10 @@ interface BundleHooks {
   running(id: string): number[]
   /** Ask the app to quit and wait for it (SIGTERM, then SIGKILL after a grace period). */
   quit(id: string): Promise<void>
+  /** Runs on a staged bundle before it is placed; throwing refuses the install or update. */
+  prepare?(manifest: Manifest, replacing: string | null): Promise<void>
+  /** Runs (awaited) after the set of installed bundles changed. */
+  changed?(): Promise<void>
 }
 
 export class BundleManager {
@@ -281,14 +393,30 @@ export class BundleManager {
       for (const e of entries) {
         if (e.kind !== 'dir' || !e.name.toLowerCase().endsWith('.app')) continue
         const path = join(root, e.name)
-        try {
-          const info = await this.load(path)
-          if (this.bundles.has(info.id)) throw new SysError('EEXIST', `${info.id} is also installed at ${this.bundles.get(info.id)!.path}`)
-          this.register(info)
-        } catch (err) {
-          this.invalid.set(path, (err as Error).message)
-        }
+        await this.scanOne(path)
       }
+    }
+    for (const root of FRAMEWORK_ROOTS) {
+      let entries
+      try {
+        entries = await this.fs.readdir(root)
+      } catch {
+        continue
+      }
+      for (const e of entries) {
+        if (e.kind === 'dir' && e.name.toLowerCase().endsWith('.framework')) await this.scanOne(join(root, e.name))
+      }
+    }
+    await this.hooks.changed?.()
+  }
+
+  private async scanOne(path: string): Promise<void> {
+    try {
+      const info = await this.load(path)
+      if (this.bundles.has(info.id)) throw new SysError('EEXIST', `${info.id} is also installed at ${this.bundles.get(info.id)!.path}`)
+      this.register(info)
+    } catch (err) {
+      this.invalid.set(path, (err as Error).message)
     }
   }
 
@@ -309,6 +437,8 @@ export class BundleManager {
     if (!st || st.kind !== 'file') bad(`entry ${manifest.entry} is missing`)
     const iconPath = manifest.icon ? join(path, manifest.icon) : null
     if (iconPath && !(await this.fs.exists(iconPath))) bad(`icon ${manifest.icon} is missing`)
+    const embed = (manifest.provides as RuntimeProvides | undefined)?.embed
+    if (manifest.kind === 'runtime' && embed && !(await this.fs.exists(join(path, embed)))) bad(`embed script ${embed} is missing`)
     return { entryPath, iconPath }
   }
 
@@ -363,7 +493,7 @@ export class BundleManager {
         const raw = source.files['manifest.json']
         if (raw === undefined) bad('manifest.json is missing')
         manifest = parseManifest(typeof raw === 'string' ? raw : dec.decode(raw))
-        staged = join(dir, dirName(manifest.name))
+        staged = join(dir, dirName(manifest.name, manifest.kind))
         await this.fs.mkdir(staged, { mode: 0o755 })
         for (const [rel, content] of Object.entries(source.files)) {
           relative(rel, 'file path')
@@ -375,7 +505,7 @@ export class BundleManager {
         const st = await this.fs.stat(source.path)
         if (st.kind !== 'dir') throw new SysError('ENOTDIR', undefined, source.path)
         manifest = parseManifest(dec.decode(await this.fs.readFile(join(source.path, 'manifest.json'))))
-        staged = join(dir, dirName(manifest.name))
+        staged = join(dir, dirName(manifest.name, manifest.kind))
         await this.fs.copy(source.path, staged, { recursive: true })
       }
       const check = await this.verify(staged)
@@ -400,19 +530,22 @@ export class BundleManager {
    * `location` is `/Applications` (default) or `/System/Applications`.
    */
   async install(source: BundleSource, opts: { location?: string } = {}): Promise<BundleInfo> {
-    const location = opts.location ?? APPS
-    if (!BUNDLE_ROOTS.includes(location)) bad(`location must be one of ${BUNDLE_ROOTS.join(', ')}`)
     const { staged, dir, manifest } = await this.stageSource(source)
     try {
+      const roots = manifest.kind === 'framework' ? FRAMEWORK_ROOTS : BUNDLE_ROOTS
+      const location = opts.location ?? roots[1]!
+      if (!roots.includes(location)) bad(`location must be one of ${roots.join(', ')}`)
       const existing = this.bundles.get(manifest.id)
       if (existing) throw new SysError('EEXIST', `${manifest.id} is already installed at ${existing.path}`)
-      const dest = join(location, dirName(manifest.name))
+      await this.hooks.prepare?.(manifest, null)
+      const dest = join(location, dirName(manifest.name, manifest.kind))
       if (await this.fs.exists(dest)) throw new SysError('EEXIST', `${dest} already exists`)
       await this.fs.mkdir(location, { recursive: true })
       await this.fs.rename(staged, dest)
       const info = await this.load(dest)
       await this.makeDataDirs(info)
       this.register(info)
+      await this.hooks.changed?.()
       this.emit({ type: 'bundle', event: 'installed', id: info.id })
       return structuredClone(info)
     } finally {
@@ -427,10 +560,11 @@ export class BundleManager {
     const { staged, dir, manifest } = await this.stageSource(source)
     try {
       if (manifest.id !== id) bad(`the new bundle is ${manifest.id}, not ${id}`)
+      await this.hooks.prepare?.(manifest, id)
       if (this.hooks.running(id).length) await this.hooks.quit(id)
       const backup = join(dir, 'previous.app')
       await this.fs.rename(old.path, backup)
-      const dest = join(old.path.slice(0, old.path.lastIndexOf('/')), dirName(manifest.name))
+      const dest = join(old.path.slice(0, old.path.lastIndexOf('/')), dirName(manifest.name, manifest.kind))
       try {
         await this.fs.rename(staged, dest)
       } catch (e) {
@@ -442,6 +576,7 @@ export class BundleManager {
       await this.makeDataDirs(info)
       this.rebuildTypes()
       this.register(info)
+      await this.hooks.changed?.()
       this.emit({ type: 'bundle', event: 'updated', id })
       return structuredClone(info)
     } finally {
@@ -462,6 +597,7 @@ export class BundleManager {
     }
     this.bundles.delete(id)
     this.rebuildTypes()
+    await this.hooks.changed?.()
     this.emit({ type: 'bundle', event: 'removed', id })
   }
 }

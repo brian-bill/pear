@@ -7,7 +7,7 @@ import { proxy } from './server/proxy'
 
 /** Vanilla's build output (`pnpm --filter @tiny/kernel build`): the kernel Worker, process runtime, Wasm, services. */
 const OS_DIR = resolve(__dirname, '../vanilla/kernel/dist')
-const OS_FILES = ['worker.js', 'process.js', 'host.html', 'tiny_vanilla_bg.wasm', 'services.json', 'userland.json']
+const OS_FILES = ['worker.js', 'process.js', 'host.html', 'tiny_vanilla_bg.wasm', 'services.json', 'userland.json', 'frameworks.json']
 const TYPES: Record<string, string> = { '.js': 'text/javascript', '.html': 'text/html', '.wasm': 'application/wasm', '.json': 'application/json' }
 
 /**

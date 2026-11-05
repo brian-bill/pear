@@ -1,4 +1,4 @@
-/// Moving files between the host computer and the VFS (`contracts/import-export.md`): pickers, drops, downloads, and
+/// Moving files between the host computer and the VFS: pickers, drops, downloads, and
 /// scheduled disk-image backups. Runs on the page, because pickers and downloads need a user gesture and the DOM.
 /// Where the File System Access API is missing it falls back to file inputs and downloads.
 import type { Kernel } from './client'

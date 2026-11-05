@@ -1,4 +1,4 @@
-/** Sharing a Code project as an app: check, package and install, and an install link (`contracts/app-distribution.md`). */
+/** Sharing a Code project as an app: check, package and install, and an install link. */
 import { expect, test, type Desktop } from './fixtures'
 
 const win = (d: Desktop) => d.win(/Code/)

@@ -25,8 +25,9 @@ export const APP = {
   settings: 'org.tiny.settings',
   editor: 'org.tiny.textedit',
   installer: 'org.tiny.installer',
+  appstore: 'org.tiny.appstore',
 }
-const DEFAULT_DOCK = [APP.profile, APP.finder, APP.terminal, APP.editor, APP.settings]
+const DEFAULT_DOCK = [APP.profile, APP.finder, APP.terminal, APP.editor, APP.appstore, APP.settings]
 
 interface SavedWindow {
   appId: string

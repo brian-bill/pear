@@ -75,7 +75,6 @@ export function previewShim(): void {
   }
 
 
-  // Networking: `net` as in the SDK (contracts/network.md), served by Code's `network` permission through the `service` call.
   type NetReply = { status: number; statusText: string; headers: Record<string, string> | Array<[string, string]>; url: string; redirected: boolean; body: Uint8Array }
   const netInit = async (init?: RequestInit & { proxy?: string; timeout?: number }): Promise<Record<string, unknown> | undefined> => {
     if (!init) return undefined

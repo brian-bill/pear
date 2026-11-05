@@ -105,6 +105,8 @@ const symbolic = (type: TypeInfo): string => {
 
 export class LaunchServices {
   private starting = new Map<string, Promise<number>>()
+  /** Set by the kernel: checks `requires` before an app starts. */
+  runtimes?: import('./runtimes').RuntimeRegistry
 
   constructor(
     private fs: FileSystem,
@@ -387,6 +389,9 @@ export class LaunchServices {
 
   /** Start a bundle's entry module as its process type: apps and tools are confined, system services trusted. */
   async spawn(bundle: BundleInfo, args: string[], opts: OpenOptions = {}): Promise<number> {
+    if (bundle.kind === 'runtime' || bundle.kind === 'framework') throw new SysError('EINVAL', `${bundle.name} is a ${bundle.kind}, not something to open`)
+    const unmet = this.runtimes?.unmet(bundle.requires) ?? []
+    if (unmet.length) throw new SysError('ENOENT', `${bundle.name} needs ${unmet.map((u) => `${u.kind} ${u.name} ${u.range} (${u.reason})`).join(', ')}`)
     const user = this.users.primary
     const trusted = bundle.kind === 'service' && bundle.system
     const pid = await this.procs.spawn(
@@ -394,6 +399,7 @@ export class LaunchServices {
       {
         args,
         name: bundle.name,
+        ...(bundle.runtime ? { runtime: bundle.runtime } : {}),
         user: trusted ? 'root' : user.name,
         cwd: trusted ? '/' : bundle.container,
         env: {
@@ -401,7 +407,7 @@ export class LaunchServices {
           TINY_APP_ID: bundle.id,
           TINY_APP_PATH: bundle.path,
           TINY_APP_KIND: bundle.kind,
-          PATH: '/bin:/Applications',
+          PATH: '/bin:/usr/local/bin:/Applications',
         },
         bundle: { id: bundle.id, kind: bundle.kind, trusted },
       },

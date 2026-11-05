@@ -1,6 +1,7 @@
-/// App sources (`contracts/app-registry.md`): the parts of a registry client that need no kernel, so the rules can be
+/// App sources: the parts of a registry client that need no kernel, so the rules can be
 /// tested alone. The `tiny.sources` service (`services/sources.ts`) does the fetching and storing.
 import { SysError } from './errors'
+import { satisfies, validRange } from './semver'
 
 export const PROTOCOL = 1
 /** Largest JSON document taken from a source. A bigger index should be dropped in favour of `search`. */
@@ -38,10 +39,33 @@ export interface Discovery {
   policy: Record<string, unknown>
 }
 
+/** What a listing is. A source may use a kind this Pear does not know; it is kept, and shown as "Other". */
+export type ListingKind = 'app' | 'tool' | 'service' | 'runtime' | 'framework' | (string & {})
+export const KINDS = ['app', 'tool', 'service', 'runtime', 'framework'] as const
+const KIND = /^[a-z][a-z0-9-]{0,23}$/
+const NAME = /^[a-z][a-z0-9._-]{0,63}$/
+
+/** Runtimes and frameworks: what they provide, so `requires` can be answered from the index alone. */
+export interface Provides {
+  runtime?: string
+  framework?: string
+  version: string
+  commands?: string[]
+}
+/** A runtime or framework an app needs (`manifest.requires`). */
+export interface Requirement {
+  runtime?: string
+  framework?: string
+  range: string
+}
+
 export interface Listing {
   id: string
   name: string
   summary: string
+  /** Default `app`. */
+  kind: ListingKind
+  provides?: Provides
   version: string
   icon?: string
   publisher: { name: string; keyFingerprint?: string }
@@ -56,7 +80,7 @@ export interface VersionRecord {
   yanked?: { reason: string }
   /** `directory`: `url` is a served bundle directory; `sha256` pins its `manifest.json`, whose `hashes` pin every file. */
   artifact: { kind: 'pearapp' | 'directory'; url: string; sha256: string; size: number }
-  manifest: { minOS?: string; permissions: string[] }
+  manifest: { minOS?: string; permissions: string[]; requires?: Requirement[] }
   releaseNotes?: string
 }
 
@@ -163,6 +187,7 @@ export function parseListing(raw: unknown, base: string): Listing {
     id,
     name: text(raw.name, 'name', 80) || bad('name is required'),
     summary: text(raw.summary, 'summary', 300, true),
+    kind: parseKind(raw.kind),
     version,
     publisher: { name: text(publisher.name, 'publisher name', 80, true) },
     categories: Array.isArray(raw.categories) ? raw.categories.filter((c): c is string => typeof c === 'string').slice(0, 8).map((c) => c.slice(0, 40)) : [],
@@ -171,7 +196,60 @@ export function parseListing(raw: unknown, base: string): Listing {
   }
   if (typeof publisher.keyFingerprint === 'string' && HEX64.test(publisher.keyFingerprint)) listing.publisher.keyFingerprint = publisher.keyFingerprint
   if (raw.icon !== undefined) listing.icon = resolveUrl(text(raw.icon, 'icon', 500), base, 'icon')
+  if (raw.provides !== undefined) listing.provides = parseProvides(raw.provides)
   return listing
+}
+
+/** Absent means `app`. Any other well-formed name is kept (the UI shows an unknown one as "Other"); anything else is refused. */
+function parseKind(raw: unknown): ListingKind {
+  if (raw === undefined) return 'app'
+  if (typeof raw !== 'string' || !KIND.test(raw)) return bad('kind must be a short lowercase name such as app, runtime or framework')
+  return raw
+}
+
+function parseProvides(raw: unknown): Provides {
+  if (!isObject(raw)) return bad('provides must be an object')
+  const version = text(raw.version, 'provides.version', 64)
+  if (!VERSION.test(version)) bad(`provides.version "${version}" is not a version`)
+  const out: Provides = { version }
+  for (const key of ['runtime', 'framework'] as const) {
+    if (raw[key] === undefined) continue
+    const name = text(raw[key], `provides.${key}`, 64)
+    if (!NAME.test(name)) bad(`provides.${key} must be a lowercase name`)
+    out[key] = name
+  }
+  if (out.runtime === undefined && out.framework === undefined) bad('provides must name a runtime or a framework')
+  if (raw.commands !== undefined) {
+    if (!Array.isArray(raw.commands)) bad('provides.commands must be a list')
+    out.commands = (raw.commands as unknown[]).filter((c): c is string => typeof c === 'string' && NAME.test(c)).slice(0, 32)
+  }
+  return out
+}
+
+export function parseRequires(raw: unknown): Requirement[] {
+  if (raw === undefined) return []
+  if (!Array.isArray(raw) || raw.length > 32) return bad('manifest.requires must be a list')
+  return raw.map((r) => {
+    if (!isObject(r)) return bad('manifest.requires entries must be objects')
+    const range = text(r.range, 'requires.range', 100)
+    if (!validRange(range)) bad(`requires: "${range}" is not a version range`)
+    const runtime = r.runtime === undefined ? undefined : text(r.runtime, 'requires.runtime', 64)
+    const framework = r.framework === undefined ? undefined : text(r.framework, 'requires.framework', 64)
+    if ((runtime === undefined) === (framework === undefined)) bad('a requirement names a runtime or a framework')
+    return { ...(runtime !== undefined ? { runtime } : { framework }), range }
+  })
+}
+
+/** The listings that provide the named runtime or framework at a version inside `range`, highest version first. */
+export function matchProvides<T extends Listing>(items: T[], want: { runtime?: string; framework?: string; range: string }): T[] {
+  return items
+    .filter((l) => {
+      const p = l.provides
+      if (!p) return false
+      const named = want.runtime !== undefined ? p.runtime === want.runtime : p.framework === want.framework
+      return named && satisfies(p.version, want.range)
+    })
+    .sort((a, b) => compareVersions(b.provides!.version, a.provides!.version) || a.name.localeCompare(b.name))
 }
 
 export function parseIndex(raw: unknown, base: string): { apps: Listing[]; featured: string[] } {
@@ -208,6 +286,7 @@ export function parseVersion(raw: unknown, base: string): VersionRecord {
     manifest: { permissions: permissions as string[] },
   }
   if (typeof m.minOS === 'string') rec.manifest.minOS = m.minOS
+  if (m.requires !== undefined) rec.manifest.requires = parseRequires(m.requires)
   if (isObject(raw.yanked)) rec.yanked = { reason: text(raw.yanked.reason, 'yanked.reason', 300, true) }
   if (typeof raw.releaseNotes === 'string') rec.releaseNotes = raw.releaseNotes.slice(0, 4000)
   return rec
@@ -253,11 +332,12 @@ export function compareVersions(a: string, b: string): number {
 }
 
 /** Filter and rank listings by words in the name, id, summary and categories. Names weigh most. */
-export function searchListings<T extends Listing>(items: T[], query: string, opts: { category?: string } = {}): T[] {
+export function searchListings<T extends Listing>(items: T[], query: string, opts: { category?: string; kind?: string } = {}): T[] {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean)
   const scored: Array<[number, T]> = []
   for (const item of items) {
     if (opts.category && !item.categories.includes(opts.category)) continue
+    if (opts.kind && item.kind !== opts.kind) continue
     let score = 0
     let all = true
     for (const w of words) {

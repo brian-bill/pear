@@ -31,7 +31,7 @@ const clamp01 = (v: unknown, what: string) => {
 }
 
 /**
- * `tiny.audio`: output mixing and microphones (`contracts/audio.md`). Apps open PCM streams and write interleaved
+ * `tiny.audio`: output mixing and microphones. Apps open PCM streams and write interleaved
  * 32-bit float samples; the service applies the master volume, mute, and the per-app volume, and the page's driver
  * plays the result. Custom `AudioWorklet` nodes need the page itself and are not available to sandboxed apps.
  */

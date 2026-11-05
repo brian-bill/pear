@@ -28,7 +28,7 @@ const MAX_SYMLINKS: u32 = 40;
 const COPY_CHUNK: usize = 64 * 1024;
 const ORIGIN_XATTR: &str = "tiny.trash.origin";
 
-/// Directories created on first boot (see `contracts/filesystem.md`).
+/// Directories created on first boot.
 const DEFAULT_DIRS: &[(&str, u32)] = &[
     ("/System", 0o755),
     ("/Applications", 0o755),

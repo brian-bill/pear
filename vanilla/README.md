@@ -206,7 +206,7 @@ A process can send only to ports it was given: by `lookup`, by creating them, or
 
 Ports can move big payloads without copying (`send(port, data, {transfer: [buffer]})`), wait for a full queue (`{timeout}`), and tell you when a peer dies (`watch(port, notifyPort)` delivers `{type: 'dead-name', port}`). `tiny.ping(pid)` measures responsiveness; `kernel.processInfo(pid).unresponsive` is the flag the Desktop uses for "Not Responding".
 
-**Processes are sandboxed.** Each one runs in a hidden `<iframe sandbox="allow-scripts">` (opaque origin, so no OPFS, IndexedDB, or storage) with a CSP of `connect-src 'none'` (no `fetch`, WebSocket, or remote imports), and the kernel's `MessagePort` is its only channel out. The page that owns the kernel Worker creates the frames, so `createKernel(worker)` must run on a page, and `dist/host.html` and `dist/process.js` must be served next to it (`createKernel(worker, {hostUrl})` overrides the frame URL). Serve `host.html` with `Content-Security-Policy: sandbox allow-scripts` too. Details and limits (no CPU or memory quotas) are in the [permissions contract](../contracts/permissions.md).
+**Processes are sandboxed.** Each one runs in a hidden `<iframe sandbox="allow-scripts">` (opaque origin, so no OPFS, IndexedDB, or storage) with a CSP of `connect-src 'none'` (no `fetch`, WebSocket, or remote imports), and the kernel's `MessagePort` is its only channel out. The page that owns the kernel Worker creates the frames, so `createKernel(worker)` must run on a page, and `dist/host.html` and `dist/process.js` must be served next to it (`createKernel(worker, {hostUrl})` overrides the frame URL). Serve `host.html` with `Content-Security-Policy: sandbox allow-scripts` too. Limits: no CPU or memory quotas.
 
 ## How the pieces fit
 
@@ -224,7 +224,7 @@ Desktop ──postMessage──▶ kernel Worker (src/worker.ts)
 
 OPFS opens files asynchronously but the engine is synchronous, so a storage call on an unopened file returns `EAGAIN` naming the file. `FileSystem` opens it and retries the whole operation, which is why every engine operation must be retry-safe (no partial state on `EAGAIN`). The unit tests check this with a storage double that behaves like OPFS.
 
-The metadata is a full index (stored in two alternating slots) plus a write-ahead journal: a flush appends one small checksummed record with the inodes that changed, and the index is rewritten only when the journal outgrows it or at shutdown. Mounting replays the journal, drops torn records, and deletes data files that belong to no file. File contents live in separate blobs, deleted only after the metadata that forgets them is durable. Changes become durable on `flush()`, which the Worker also runs on a 250 ms debounce after any call. Details: the [filesystem contract](../contracts/filesystem.md).
+The metadata is a full index (stored in two alternating slots) plus a write-ahead journal: a flush appends one small checksummed record with the inodes that changed, and the index is rewritten only when the journal outgrows it or at shutdown. Mounting replays the journal, drops torn records, and deletes data files that belong to no file. File contents live in separate blobs, deleted only after the metadata that forgets them is durable. Changes become durable on `flush()`, which the Worker also runs on a 250 ms debounce after any call.
 
 ## Project layout
 
@@ -234,12 +234,6 @@ vanilla/
 ├── wasm/        OPFS Storage backend + wasm-bindgen facade (Rust)
 └── kernel/      kernel Worker, RPC client, system services, shell, browser tests (TypeScript)
 ```
-
-## Documentation
-
-Every subsystem has a contract that describes its behaviour, IPC surface, and guarantees:
-
-[filesystem](../contracts/filesystem.md) · [processes](../contracts/processes.md) · [ipc](../contracts/ipc.md) · [permissions](../contracts/permissions.md) · [app-bundles](../contracts/app-bundles.md) · [launch-services](../contracts/launch-services.md) · [configuration](../contracts/configuration.md) · [boot-and-session](../contracts/boot-and-session.md) · [network](../contracts/network.md) · [timers](../contracts/timers.md) — see the [`contracts/`](../contracts/) directory for the full list.
 
 ## Design principles
 

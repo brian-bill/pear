@@ -12,9 +12,10 @@ import { network } from './panes/network'
 import { notifications } from './panes/notifications'
 import { power } from './panes/power'
 import { privacy } from './panes/privacy'
+import { runtimesPane } from './panes/runtimes'
 import { sound } from './panes/sound'
 
-const PANES: Pane[] = [general, appearance, desktop, displays, sound, keyboard, language, notifications, privacy, network, appsPane, accessibility, power]
+const PANES: Pane[] = [general, appearance, desktop, displays, sound, keyboard, language, notifications, privacy, network, appsPane, runtimesPane, accessibility, power]
 
 const listEl = document.getElementById('panes')!
 const paneEl = document.getElementById('pane')!

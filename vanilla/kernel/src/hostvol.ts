@@ -46,7 +46,17 @@ function mapError(e: unknown, path?: string): never {
 
 const split = (rel: string) => rel.split('/').filter(Boolean)
 const errName = (e: unknown) => (e as { name?: string } | undefined)?.name
-const bytesOf = async (h: FileSystemFileHandle) => new Uint8Array(await (await h.getFile()).arrayBuffer())
+// A `File` is a snapshot: if the file is rewritten between `getFile()` and the read, the browser throws
+// InvalidStateError. Taking a fresh snapshot and reading again recovers.
+const bytesOf = async (h: FileSystemFileHandle) => {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return new Uint8Array(await (await h.getFile()).arrayBuffer())
+    } catch (e) {
+      if (attempt >= 2 || errName(e) !== 'InvalidStateError') throw e
+    }
+  }
+}
 const resized = (data: Uint8Array, size: number) => {
   const next = new Uint8Array(size)
   next.set(data.subarray(0, Math.min(size, data.length)))

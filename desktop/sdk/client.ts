@@ -336,7 +336,7 @@ function service<T = unknown>(name: string, msg: Record<string, unknown>, timeou
 }
 
 
-// ---- networking: the `tiny.network` service as the browser-shaped `net` object (contracts/network.md). The window itself
+// ---- networking: the `tiny.network` service as the browser-shaped `net` object. The window itself
 // has no network; every request goes through the system service, which needs the `network` permission in the manifest.
 
 type NetReply = { status: number; statusText: string; headers: Record<string, string> | Array<[string, string]>; url: string; redirected: boolean; body: Uint8Array }

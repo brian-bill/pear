@@ -5,7 +5,7 @@ import type { Pear } from '../src/runtime'
 const CONTRACTS: Record<string, number> = {
   conventions: 1, filesystem: 1, processes: 1, ipc: 1, configuration: 1, display: 1, input: 1, audio: 1, clipboard: 1, timers: 1,
   'shell-and-userland': 1, 'app-bundles': 1, 'launch-services': 1, notifications: 1, permissions: 1, 'boot-and-session': 1,
-  search: 1, network: 1, 'import-export': 1, 'system-info': 1, logging: 1,
+  search: 1, network: 1, 'import-export': 1, 'system-info': 1, logging: 1, runtimes: 1,
 }
 
 interface Host {
@@ -23,7 +23,7 @@ const US_MEASURE = new Set(['US', 'LR', 'MM'])
 const dec = new TextDecoder()
 
 /**
- * `tiny.system`: facts about the OS and the host (`contracts/system-info.md`). The page's driver pushes what only a page
+ * `tiny.system`: facts about the OS and the host. The page's driver pushes what only a page
  * can see (screen, battery, media queries, feature flags); the rest comes from the file system, Intl and settings.
  * Anything the browser does not offer is `null`.
  */
@@ -145,7 +145,11 @@ export default async (tiny: Pear) => {
     'tiny.system',
     {
       version,
-      capabilities: () => ({ contracts: CONTRACTS, features: host.features }),
+      capabilities: async () => ({
+        contracts: CONTRACTS,
+        features: host.features,
+        runtimes: (await tiny.runtimeList().catch(() => [])).map((r) => ({ name: r.name, version: r.version, abi: r.abi, default: r.default })),
+      }),
       hardware: () => ({ ...host.hardware, cores: host.hardware.cores === null ? null : Math.min(host.hardware.cores, 16), gpu: undefined }),
       storage,
       persist: async (_a, m) => {

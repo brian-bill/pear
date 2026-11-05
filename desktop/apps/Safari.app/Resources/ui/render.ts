@@ -6,7 +6,7 @@
 /// resolve against its final address. Non-HTML replies get a reader view.
 import { escapeHtml } from '@tiny/sdk'
 
-/** A `tiny.network` `fetch` reply (`contracts/network.md`). */
+/** A `tiny.network` `fetch` reply. */
 export interface FetchResult {
   status: number
   statusText?: string

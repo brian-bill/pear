@@ -1,14 +1,9 @@
-// The web extension host (contracts/code-extensions.md): each enabled code extension runs in its
-// own Worker, built from a Blob that holds a small `vscode` API plus the extension's bundled
-// `browser` entry. The worker has no page access and no syscall surface; everything it can do goes
-// through `rpc` calls that this file answers, with a path policy for files and the proxy for fetch.
-//
 // Supported API: commands, window messages / output channels / status bar messages, workspace.fs,
 // Uri, Disposable, EventEmitter, ExtensionContext, and `fetch`. Language-feature providers
 // (`vscode.languages.register*`) are accepted and ignored with a note in the output.
 import { dirname, tiny } from '@tiny/sdk'
 import { API_VERSION } from './vsx'
-import { readEntry, storageDir, type Installed } from './vsxstore'
+import { nodeRuntime, readEntry, refreshNode, storageDir, type Installed } from './vsxstore'
 
 type Level = 'info' | 'warning' | 'error'
 
@@ -156,9 +151,45 @@ onmessage = async (e) => {
 };
 `
 
+/** What the host needs of an extension's Worker; a Node extension's is the runtime's embed Worker behind this facade. */
+interface Channel {
+  postMessage(data: unknown): void
+  terminate(): void
+  onmessage: ((e: { data: unknown }) => void) | null
+  onerror: ((e: { message: string }) => void) | null
+}
+
+/**
+ * The Node host: the installed Node.js runtime's `embed.js` runs the extension in
+ * its own Worker. The extension talks to this file through the same `postMessage` protocol as a web extension (carried
+ * over the program's stdio by the runtime), and every file it reads or writes is a host call answered by `handle` below, so
+ * the path policy is the web host's. The extension never receives `tiny`.
+ */
+const NODE_RUNNER = String.raw`'use strict';
+const __host = require('@pear/host');
+const postMessage = (m) => __host.post(m);
+let onmessage = null;
+__host.onMessage((data) => { if (onmessage) onmessage({ data }) });
+const self = globalThis;
+/*PRELUDE*/
+globalThis.__pearVscode = vscode;
+__module.exports = require(__info.main);
+`
+
+/** A Blob URL of the installed runtime's embed script, kept while the same runtime build is installed. */
+let embedUrl: { key: string; url: string } | null = null
+async function embedScript(): Promise<string> {
+  const info = await tiny.runtimeEmbed('node')
+  const key = `${info.bundleId}@${info.version}`
+  if (embedUrl?.key === key) return embedUrl.url
+  if (embedUrl) URL.revokeObjectURL(embedUrl.url)
+  embedUrl = { key, url: URL.createObjectURL(new Blob([(await tiny.readFile(info.scriptPath)) as BlobPart], { type: 'text/javascript' })) }
+  return embedUrl.url
+}
+
 interface Running {
   ext: Installed
-  worker: Worker
+  worker: Channel
   url: string
   commands: Set<string>
   ready: Promise<void>
@@ -191,12 +222,16 @@ export class ExtensionHost {
 
   /** Start every enabled code extension that is allowed to run, stop the rest. */
   async sync(list: Installed[]): Promise<void> {
-    const want = new Map(list.filter((e) => e.enabled && e.manifest.browser).map((e) => [e.id, e]))
+    await refreshNode()
+    const want = new Map(list.filter((e) => e.enabled && this.runnable(e)).map((e) => [e.id, e]))
+    for (const e of list) if (e.enabled && !this.runnable(e) && e.manifest.main) this.skipped.set(e.id, 'Needs the Node.js runtime: add it in Settings ▸ Runtimes.')
     for (const [id, r] of [...this.running]) {
       const next = want.get(id)
       if (!next || next.dir !== r.ext.dir || next.version !== r.ext.version) await this.stop(id)
     }
+    const missing = new Map([...this.skipped].filter(([id]) => !want.has(id) && list.some((e) => e.id === id)))
     this.skipped.clear()
+    for (const [id, why] of missing) this.skipped.set(id, why)
     for (const ext of want.values()) {
       if (this.running.has(ext.id)) continue
       const blocked = this.restricted(ext)
@@ -210,6 +245,11 @@ export class ExtensionHost {
     }
   }
 
+  /** Does this extension have a host here: a browser entry, or a Node entry with the Node.js runtime installed? */
+  private runnable(ext: Installed): boolean {
+    return !!ext.manifest.browser || (!!ext.manifest.main && nodeRuntime() !== null)
+  }
+
   /** Why Restricted Mode keeps this extension from running, or null. */
   private restricted(ext: Installed): string | null {
     const support = ext.manifest.capabilities?.untrustedWorkspaces?.supported
@@ -218,21 +258,39 @@ export class ExtensionHost {
 
   async start(ext: Installed): Promise<void> {
     if (this.running.has(ext.id)) return this.running.get(ext.id)!.ready
-    let source: string
-    try {
-      source = await readEntry(ext)
-    } catch (e) {
-      this.skipped.set(ext.id, `Could not read ${ext.manifest.browser}: ${(e as Error).message}`)
-      return
+    const node = !ext.manifest.browser && !!ext.manifest.main
+    let source = ''
+    if (!node) {
+      try {
+        source = await readEntry(ext)
+      } catch (e) {
+        this.skipped.set(ext.id, `Could not read ${ext.manifest.browser}: ${(e as Error).message}`)
+        return
+      }
     }
     const storage = await storageDir(ext.id)
-    const info = { id: ext.id, dir: ext.dir, storage, project: this.env.project(), trusted: this.env.trusted(), api: API_VERSION, manifest: ext.manifest }
-    const code = `'use strict';${PRELUDE.replace('__INFO__', () => JSON.stringify(info).replace(/</g, '\\u003c'))}\n(function (module, exports, require) {\n${source}\n})(__module, __module.exports, __require);`
-    const url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }))
-    const worker = new Worker(url)
+    const info = { id: ext.id, dir: ext.dir, storage, project: this.env.project(), trusted: this.env.trusted(), api: API_VERSION, manifest: ext.manifest, main: node ? `${ext.dir.replace(/\/+$/, '')}/${ext.manifest.main!.replace(/^\.\//, '')}` : undefined }
+    const prelude = PRELUDE.replace('__INFO__', () => JSON.stringify(info).replace(/</g, '\\u003c'))
+    let worker: Channel
+    let url = ''
+    if (node) {
+      try {
+        const made = await this.startNode(ext, storage, NODE_RUNNER.replace('/*PRELUDE*/', () => prelude))
+        worker = made.channel
+        url = made.url
+      } catch (e) {
+        this.skipped.set(ext.id, `Could not start the Node.js runtime: ${(e as Error).message}`)
+        this.env.log(ext.id, `${ext.id}: ${(e as Error).message}`, 'err')
+        return
+      }
+    } else {
+      const code = `'use strict';${prelude}\n(function (module, exports, require) {\n${source}\n})(__module, __module.exports, __require);`
+      url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }))
+      worker = new Worker(url) as unknown as Channel
+    }
     const run: Running = { ext, worker, url, commands: new Set(), storage, ready: Promise.resolve() }
     run.ready = new Promise<void>((resolve) => {
-      worker.onmessage = (e: MessageEvent) => {
+      worker.onmessage = (e: { data: unknown }) => {
         const m = e.data as { t: string; n?: number; op?: string; args?: unknown[]; id?: string; error?: string; view?: string }
         if (m.t === 'rpc') void this.answer(run, m.n!, m.op!, m.args ?? [])
         else if (m.t === 'registered') run.commands.add(m.id!)
@@ -257,7 +315,7 @@ export class ExtensionHost {
           resolve()
         }
       }
-      worker.onerror = (e) => {
+      worker.onerror = (e: { message: string }) => {
         this.env.log(ext.id, `${ext.id} crashed: ${e.message}`, 'err')
         this.skipped.set(ext.id, 'Crashed; see Output.')
         resolve()
@@ -265,7 +323,7 @@ export class ExtensionHost {
     })
     this.running.set(ext.id, run)
     worker.postMessage({ t: 'activate' })
-    await Promise.race([run.ready, new Promise<void>((r) => setTimeout(r, 10_000))])
+    await Promise.race([run.ready, new Promise<void>((r) => setTimeout(r, node ? 30_000 : 10_000))])
   }
 
   async stop(id: string): Promise<void> {
@@ -277,7 +335,7 @@ export class ExtensionHost {
     r.worker.postMessage({ t: 'deactivate' })
     await new Promise((res) => setTimeout(res, 50))
     r.worker.terminate()
-    URL.revokeObjectURL(r.url)
+    if (r.url) URL.revokeObjectURL(r.url)
   }
 
   async stopAll(): Promise<void> {
@@ -309,7 +367,7 @@ export class ExtensionHost {
   /** Commands the installed extensions declare (`contributes.commands`), whether or not they are running. */
   commands(list: Installed[]): Array<{ ext: string; command: string; title: string }> {
     return list
-      .filter((e) => e.enabled && e.manifest.browser)
+      .filter((e) => e.enabled && this.runnable(e))
       .flatMap((e) => (e.manifest.contributes?.commands ?? []).map((c) => ({ ext: e.id, command: c.command, title: c.title })))
   }
 
@@ -317,7 +375,7 @@ export class ExtensionHost {
   async run(list: Installed[], command: string): Promise<void> {
     let owner = [...this.running.values()].find((r) => r.commands.has(command))
     if (!owner) {
-      const ext = list.find((e) => e.enabled && e.manifest.browser && e.manifest.contributes?.commands?.some((c) => c.command === command))
+      const ext = list.find((e) => e.enabled && this.runnable(e) && e.manifest.contributes?.commands?.some((c) => c.command === command))
       if (!ext) throw new Error(`No extension provides the command ${command}.`)
       const blocked = this.restricted(ext)
       if (blocked) throw new Error(`${command}: ${blocked}`)
@@ -326,6 +384,79 @@ export class ExtensionHost {
     }
     if (!owner) throw new Error(`${command} is unavailable: its extension did not start.`)
     owner.worker.postMessage({ t: 'command', id: command, args: [] })
+  }
+
+  /**
+   * Start the extension in the Node.js runtime's embed Worker. Resolves with a channel that looks like a web extension's Worker.
+   * Rejects when no runtime is installed or its script cannot be read.
+   */
+  private async startNode(ext: Installed, storage: string, runner: string): Promise<{ channel: Channel; url: string }> {
+    const worker = new Worker(await embedScript())
+    const channel: Channel = {
+      onmessage: null,
+      onerror: null,
+      postMessage: (data) => worker.postMessage({ type: 'message', data }),
+      terminate: () => {
+        worker.postMessage({ type: 'stop' })
+        setTimeout(() => worker.terminate(), 1500)
+      },
+    }
+    const run = (): Running | undefined => this.running.get(ext.id)
+    const project = this.env.project()
+    const home = (await tiny.getenv('HOME')) ?? '/'
+    worker.onmessage = (e: MessageEvent) => {
+      const m = e.data as { type: string; data?: unknown; text?: string; message?: string; code?: number; id?: number; op?: string; args?: unknown[] }
+      if (m.type === 'message') channel.onmessage?.({ data: m.data })
+      else if (m.type === 'stdout' || m.type === 'stderr') this.env.log(ext.id, `[${m.type}] ${m.text}`.trimEnd(), m.type === 'stderr' ? 'err' : undefined)
+      else if (m.type === 'error') channel.onerror?.({ message: m.message ?? 'The Node.js runtime failed.' })
+      else if (m.type === 'exit') {
+        if (run() && m.code !== 143) channel.onerror?.({ message: `the Node.js process exited with code ${m.code}` })
+      } else if (m.type === 'host') {
+        const r = run() ?? ({ ext, storage } as Running)
+        void this.hostCall(r, m.op!, m.args ?? []).then(
+          (result) => worker.postMessage({ type: 'reply', id: m.id, result }),
+          (err: { message?: string; code?: string }) => worker.postMessage({ type: 'reply', id: m.id, error: { message: err.message ?? String(err), code: err.code } }),
+        )
+      }
+    }
+    worker.onerror = (e) => channel.onerror?.({ message: e.message })
+    // What the extension can see (read ahead) and what is written back; both are checked again on every host call.
+    const roots = [ext.dir, storage, ...(project ? [project] : [])]
+    const persist = [storage, ...(project && this.env.trusted() ? [project] : [])]
+    worker.postMessage({
+      type: 'start',
+      cwd: project ?? ext.dir,
+      env: { HOME: home, PATH: '/bin', LANG: 'en_US.UTF-8', TERM_PROGRAM: 'pear-code' },
+      argv: ['/__pear__/run.js'],
+      roots,
+      persist,
+      files: { '/__pear__/run.js': runner, '/node_modules/vscode/index.js': 'module.exports = globalThis.__pearVscode;' },
+      limits: { maxBytes: 48 * 1024 * 1024, maxFiles: 20_000 },
+    })
+    return { channel, url: '' }
+  }
+
+  /** A file call from an embedded Node.js program: the same path policy as `fs.*` in the web host. */
+  private async hostCall(run: Running, op: string, args: unknown[]): Promise<unknown> {
+    const [a, b] = args as [string, unknown]
+    const read = (p: string) => {
+      if (!this.readable(run, p)) throw this.denied(p)
+    }
+    const write = (p: string) => {
+      if (!this.writable(run, p)) throw this.denied(p)
+    }
+    switch (op) {
+      case 'readdir': read(a); return tiny.readdir(a)
+      case 'readFile': read(a); return tiny.readFile(a)
+      case 'readlink': read(a); return tiny.readlink(a)
+      case 'writeFile': write(a); await tiny.mkdir(dirname(a), { recursive: true }); return tiny.writeFile(a, b as Uint8Array)
+      case 'mkdir': write(a); return tiny.mkdir(a, (b as { recursive?: boolean }) ?? {})
+      case 'removeAll': write(a); return tiny.removeAll(a)
+      case 'rename': write(a); write(b as string); return tiny.rename(a, b as string)
+      case 'symlink': write(b as string); return tiny.symlink(a, b as string)
+      case 'chmod': write(a); return tiny.chmod(a, b as number)
+      default: throw Object.assign(new Error(`Unknown host call ${op}`), { code: 'ENOSYS' })
+    }
   }
 
   private async answer(run: Running, n: number, op: string, args: unknown[]): Promise<void> {

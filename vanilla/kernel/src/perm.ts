@@ -7,7 +7,7 @@ import type { Credentials, UserDb } from './users'
 
 export const CAPABILITIES = [
   'fs.container', 'fs.user', 'fs.picker', 'fs.all',
-  'clipboard', 'notifications', 'audio.input', 'video.input', 'network', 'location', 'process.spawn', 'display.capture',
+  'clipboard', 'notifications', 'audio.input', 'video.input', 'network', 'location', 'process.spawn', 'display.capture', 'loopback',
 ] as const
 export type Capability = (typeof CAPABILITIES)[number]
 export type Status = 'granted' | 'denied' | 'prompt'
@@ -49,7 +49,7 @@ const PROMPT_TIMEOUT_MS = 30_000
 const AUDIT_FLUSH_MS = 250
 
 /** Read-only for apps: the system, programs, and the list of apps. */
-const SHARED_READONLY = ['/System', '/bin', '/usr', '/etc', '/Applications']
+const SHARED_READONLY = ['/System', '/bin', '/usr', '/etc', '/Applications', '/Library/Frameworks']
 const SHARED_WRITABLE = ['/tmp']
 
 const R = 4

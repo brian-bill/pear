@@ -1,4 +1,4 @@
-/// The system log, crash reports, diagnostics and traces (`contracts/logging.md`). Entries live in a ring buffer in
+/// The system log, crash reports, diagnostics and traces. Entries live in a ring buffer in
 /// memory and are appended to `/var/log/system.log` (rotated by size); crash reports are JSON files in
 /// `/var/log/crashes`. If the disk is full or the write fails, logging carries on in memory.
 import { SysError } from './errors'

@@ -1,16 +1,20 @@
 import { fail, needSystem, serve } from './lib'
 import type { Pear } from '../src/runtime'
 import { fetchDirectory, type Get } from '../src/dirbundle'
+import { validRange } from '../src/semver'
 import {
   MAX_DOCUMENT,
   compareVersions,
   b64,
   latest,
+  matchProvides,
   mergeSources,
   normalizeSourceUrl,
   parseApp,
   parseDiscovery,
   parseIndex,
+  parseListing,
+  parseRequires,
   resolveUrl,
   searchListings,
   sourceId,
@@ -53,7 +57,7 @@ interface Net {
 }
 
 /**
- * `tiny.sources`: app sources (`contracts/app-registry.md`). It keeps the list of registries, reads their catalogs
+ * `tiny.sources`: app sources. It keeps the list of registries, reads their catalogs
  * through `tiny.network`, and fetches and checks an app before the Desktop installs it. A process cannot install
  * bundles, so `prepare` hands back verified files and the Desktop calls `bundleInstall` and then `record`. Only the
  * system may call this service: an app can neither add a source nor start an install.
@@ -65,6 +69,7 @@ export default async (tiny: Pear) => {
   const docs = new Map<string, Cached>() // by URL: conditional requests, and what to show when a source is down
   const indexes = new Map<string, { apps: Listing[]; featured: string[] }>()
   const status = new Map<string, Status>()
+  const assets = new Map<string, string>() // image URL -> data URL
 
   // ---- stored settings
 
@@ -232,7 +237,7 @@ export default async (tiny: Pear) => {
     if (!src.enabled) throw fail('EACCES', `${src.name} is turned off`)
     const { app } = await appRecord(src, appId)
     const v = pickVersion(app, wanted)
-    const common = { appId, name: app.name, version: v.version, digest: v.artifact.sha256, sourceId: src.id, sourceUrl: src.url, permissions: v.manifest.permissions, publisher: app.publisher.name, unsigned: true }
+    const common = { appId, name: app.name, listingKind: app.kind, requires: v.manifest.requires ?? [], version: v.version, digest: v.artifact.sha256, sourceId: src.id, sourceUrl: src.url, permissions: v.manifest.permissions, publisher: app.publisher.name, unsigned: true }
     if (v.artifact.kind === 'pearapp') return { kind: 'archive' as const, bytes: (await fetchArchive(v)).bytes, ...common }
     return { kind: 'directory' as const, files: await fetchBundle(src, app, v), ...common }
   }
@@ -319,22 +324,108 @@ export default async (tiny: Pear) => {
       return Promise.all(targets.map(async (s) => status_((await find(s.id)))))
     },
 
-    /** Listings from every enabled source (or `sources`), grouped by source; the same app id in two sources stays two entries. */
+    /**
+     * Listings from every enabled source (or `sources`), grouped by source; the same app id in two sources stays two entries.
+     * `kind` keeps one kind. A source that only offers `search` (no `index`) and is not signed is asked with `/apps?q=&kind=`.
+     */
     search: async (a, m) => {
       await needSystem(tiny, m, 'search sources')
       const chosen = (await sources()).filter((s) => s.enabled && (!Array.isArray(a.sources) || a.sources.includes(s.id)))
       const limit = Math.min(Math.max(Number(a.limit) || 50, 1), 200)
+      const kind = typeof a.kind === 'string' && a.kind ? a.kind : undefined
+      const category = typeof a.category === 'string' && a.category ? a.category : undefined
+      const query = String(a.query ?? '')
       return Promise.all(chosen.map(async (src) => {
         try {
           const c = await catalog(src)
-          const query = String(a.query ?? '')
-          const hits = query.trim() || a.category ? searchListings(c.apps, query, { category: a.category }) : [...c.apps].sort((x, y) => Number(c.featured.includes(y.id)) - Number(c.featured.includes(x.id)) || x.name.localeCompare(y.name))
-          return { sourceId: src.id, sourceName: src.name, stale: c.stale, total: hits.length, apps: hits.slice(0, limit), ...(c.stale && { error: status.get(src.id)?.error }) }
+          if (!c.disco.capabilities.includes('index') && c.disco.capabilities.includes('search') && !c.disco.key) {
+            const url = new URL(resolveUrl('apps', c.disco.api, 'search'))
+            if (query.trim()) url.searchParams.set('q', query.trim())
+            if (category) url.searchParams.set('category', category)
+            if (kind) url.searchParams.set('kind', kind)
+            url.searchParams.set('limit', String(limit))
+            const res = await document(url.href)
+            const raw = json(res.bytes) as { apps?: unknown[]; total?: number } | unknown[]
+            const list = Array.isArray(raw) ? raw : (raw.apps ?? [])
+            const apps = list.map((l) => parseListing(l, c.disco.api)).filter((l) => !kind || l.kind === kind)
+            return { sourceId: src.id, sourceName: src.name, stale: res.stale, total: !Array.isArray(raw) && typeof raw.total === 'number' ? raw.total : apps.length, apps: apps.slice(0, limit) }
+          }
+          const hits = query.trim() || category || kind
+            ? searchListings(c.apps, query, { category, kind })
+            : [...c.apps].sort((x, y) => Number(c.featured.includes(y.id)) - Number(c.featured.includes(x.id)) || x.name.localeCompare(y.name))
+          return { sourceId: src.id, sourceName: src.name, stale: c.stale, featured: c.featured, total: hits.length, apps: hits.slice(0, limit), ...(c.stale && { error: status.get(src.id)?.error }) }
         } catch (e) {
           const err = e as { code?: string; message?: string }
           return { sourceId: src.id, sourceName: src.name, stale: false, total: 0, apps: [], error: { code: err.code ?? 'EIO', message: err.message ?? String(e) } }
         }
       }))
+    },
+
+    /**
+     * Which listings satisfy `{runtime|framework, range}`: from the indexes of the enabled sources (a source that is not
+     * loaded yet is loaded; one that only offers `search` is asked at `/resolve`). One group per source that has any,
+     * `sourceId` first, best version first in each. Nothing is installed.
+     */
+    resolveRequirement: async (a, m) => {
+      await needSystem(tiny, m, 'look up a requirement')
+      const runtime = typeof a.runtime === 'string' && a.runtime ? a.runtime : undefined
+      const framework = typeof a.framework === 'string' && a.framework ? a.framework : undefined
+      if ((runtime === undefined) === (framework === undefined)) throw fail('EINVAL', 'name a runtime or a framework')
+      const range = String(a.range ?? '*')
+      if (!validRange(range)) throw fail('EINVAL', `"${range}" is not a version range`)
+      const want = { ...(runtime !== undefined ? { runtime } : { framework }), range }
+      const enabled = (await sources()).filter((s) => s.enabled)
+      const ordered = [...enabled.filter((s) => s.id === a.sourceId), ...enabled.filter((s) => s.id !== a.sourceId)]
+      const groups = await Promise.all(ordered.map(async (src) => {
+        try {
+          const cached = indexes.get(src.id)
+          const c = cached ? { ...cached, stale: false, disco: discovery.get(src.id) } : await catalog(src)
+          let apps: Listing[]
+          if (c.disco && !c.disco.capabilities.includes('index') && c.disco.capabilities.includes('search') && !c.disco.key) {
+            const url = new URL(resolveUrl('resolve', c.disco.api, 'resolve'))
+            url.searchParams.set(runtime !== undefined ? 'runtime' : 'framework', (runtime ?? framework)!)
+            url.searchParams.set('range', range)
+            const raw = json((await document(url.href)).bytes) as { apps?: unknown[] } | unknown[]
+            apps = matchProvides((Array.isArray(raw) ? raw : (raw.apps ?? [])).map((l) => parseListing(l, c.disco!.api)), want)
+          } else apps = matchProvides(c.apps, want)
+          return { sourceId: src.id, sourceName: src.name, stale: c.stale, apps }
+        } catch (e) {
+          return { sourceId: src.id, sourceName: src.name, stale: false, apps: [] as Listing[], error: { code: (e as { code?: string }).code ?? 'EIO', message: (e as Error).message } }
+        }
+      }))
+      return groups.filter((g) => g.apps.length || g.error)
+    },
+
+    /**
+     * An image of a source (icon, screenshot) as a `data:` URL, for a window that may not fetch. Same origin as the
+     * source only, images only, small.
+     */
+    asset: async (a, m) => {
+      await needSystem(tiny, m, 'read a source image')
+      const src = await find(a.sourceId)
+      const url = new URL(resolveUrl(String(a.url ?? ''), src.url, 'image'))
+      const origin = new URL(discovery.get(src.id)?.api ?? src.url).origin
+      if (url.origin !== new URL(src.url).origin && url.origin !== origin) throw fail('EPERM', 'an image has to come from the source itself')
+      const hit = assets.get(url.href)
+      if (hit) return hit
+      const res = await get(url.href, { accept: 'image/*' })
+      if (res.status !== 200) throw fail(res.status === 404 ? 'ENOENT' : 'EIO', `the image answered ${res.status}`)
+      if (res.body.length > 2 * 1024 * 1024) throw fail('E2BIG', 'the image is larger than 2 MB')
+      const ext = /\.(png|jpe?g|webp|gif|svg)$/i.exec(url.pathname)?.[1]?.toLowerCase()
+      const type = ext === 'svg' ? 'image/svg+xml' : ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : ext === 'gif' ? 'image/gif' : ext ? 'image/jpeg' : null
+      if (!type) throw fail('EINVAL', 'that is not an image')
+      let bin = ''
+      for (let i = 0; i < res.body.length; i += 0x8000) bin += String.fromCharCode(...res.body.subarray(i, i + 0x8000))
+      const out = `data:${type};base64,${btoa(bin)}`
+      if (assets.size > 200) assets.clear()
+      assets.set(url.href, out)
+      return out
+    },
+
+    /** Which of these requirements nothing installed satisfies (the kernel's own answer, the one a launch uses). */
+    unmet: async (a, m) => {
+      await needSystem(tiny, m, 'check requirements')
+      return tiny.runtimeUnmet(parseRequires(a.requires))
     },
 
     app: async (a, m) => {

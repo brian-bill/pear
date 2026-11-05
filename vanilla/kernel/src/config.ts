@@ -226,7 +226,7 @@ function parse(text: string): Record<string, ConfigValue> | null {
 
 const clone = <T>(v: T): T => (v === undefined || v === null || typeof v !== 'object' ? v : (JSON.parse(JSON.stringify(v)) as T))
 
-/** Defaults for the well-known domains (see `contracts/configuration.md`). */
+/** Defaults for the well-known domains. */
 export const WELL_KNOWN: Record<string, Schema> = {
   'tiny.system': {
     appearance: { type: 'string', default: 'auto', enum: ['light', 'dark', 'auto'] },

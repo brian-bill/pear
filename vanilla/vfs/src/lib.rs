@@ -1,8 +1,6 @@
 //! Vanilla virtual file system engine.
 //!
-//! A Unix-style hierarchy over a flat [`Storage`] blob store. See
-//! `contracts/filesystem.md` for the contract this implements.
-
+//! A Unix-style hierarchy over a flat [`Storage`] blob store.
 mod error;
 mod mem;
 pub mod path;

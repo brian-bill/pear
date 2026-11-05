@@ -195,6 +195,16 @@ test('errors: unknown commands, syntax, bad redirects', async ({ page }) => {
   expect(rs[6]!.err).not.toBe('')
 })
 
+test('a script whose runtime is not installed is "command not found" with the kernel hint, status 127', async ({ page }) => {
+  const r = await page.evaluate(async () => {
+    await window.sh.install('/tmp/needsphp', '#!/usr/bin/env php\n<?php echo 1;\n')
+    const st = await window.sh.run('/bin/sh', { args: ['-c', '/tmp/needsphp; echo status=$?'] })
+    return { out: st.stdout ?? '', err: st.stderr ?? '' }
+  })
+  expect(r.out).toBe('status=127\n')
+  expect(r.err).toMatch(/^sh: \/tmp\/needsphp: command not found \(.*no runtime provides "php".*Settings > Runtimes/)
+})
+
 // ------------------------------------------------------------- core utilities
 
 test('ls, mkdir, touch, cp, mv, rm', async ({ page }) => {

@@ -39,7 +39,8 @@ const host = await build({
 const script = host.outputFiles[0].text.trimEnd()
 if (script.includes('</script')) throw new Error('host script must not contain a closing script tag')
 const hash = createHash('sha256').update(script).digest('base64')
-const csp = `default-src 'none'; script-src 'sha256-${hash}' blob:; worker-src blob:; connect-src 'none'`
+// 'wasm-unsafe-eval' lets a process compile WebAssembly (runtimes such as the WASI framework run .wasm); it does not allow eval() or new Function.
+const csp = `default-src 'none'; script-src 'sha256-${hash}' 'wasm-unsafe-eval' blob:; worker-src blob:; connect-src 'none'`
 writeFileSync(
   'dist/host.html',
   `<!doctype html>\n<meta charset="utf-8">\n<meta http-equiv="Content-Security-Policy" content="${csp}">\n<script>${script}</script>\n`,
@@ -64,6 +65,28 @@ async function bundlePrograms(dir) {
 }
 await bundlePrograms('userland')
 await bundlePrograms('services')
+
+// System frameworks (`frameworks/<name>/`): shared library bundles that boot installs into
+// /System/Library/Frameworks. `dist/frameworks.json` maps name to the bundle's files (manifest.json + the module).
+async function bundleFrameworks() {
+  const out = {}
+  for (const name of readdirSync('frameworks')) {
+    const manifest = JSON.parse(readFileSync(`frameworks/${name}/manifest.json`, 'utf8'))
+    const module = manifest.provides.module
+    const built = await build({
+      entryPoints: [`frameworks/${name}/${module.replace(/\.js$/, '.ts')}`],
+      bundle: true,
+      format: 'esm',
+      target: 'es2022',
+      write: false,
+      outdir: 'out',
+      logLevel: 'info',
+    })
+    out[name] = { 'manifest.json': JSON.stringify(manifest), [module]: built.outputFiles[0].text }
+  }
+  writeFileSync('dist/frameworks.json', JSON.stringify(out))
+}
+await bundleFrameworks()
 
 copyFileSync('pkg/tiny_vanilla_bg.wasm', 'dist/tiny_vanilla_bg.wasm')
 copyFileSync('test/harness/index.html', 'dist/index.html')

@@ -1,7 +1,7 @@
-/** `tiny.sources`: app sources, search, and checked installs (`contracts/app-registry.md`). */
+/** `tiny.sources`: app sources, search, and checked installs. */
 import { createHash, generateKeyPairSync, sign } from 'node:crypto'
 import type { Page, Route } from '@playwright/test'
-import { compareVersions, normalizeSourceUrl, parseDiscovery, searchListings, type Listing } from '../src/sources'
+import { compareVersions, matchProvides, normalizeSourceUrl, parseApp, parseDiscovery, parseIndex, searchListings, type Listing } from '../src/sources'
 import { expect, test } from './fixtures'
 
 const sha = (b: string | Buffer) => createHash('sha256').update(b).digest('hex')
@@ -85,11 +85,41 @@ test.describe('rules without a browser', () => {
   })
 
   test('search ranks names above summaries and filters by category', () => {
-    const l = (id: string, name: string, summary: string, categories: string[]): Listing => ({ id, name, summary, version: '1.0.0', publisher: { name: '' }, categories, size: 0, updated: '' })
+    const l = (id: string, name: string, summary: string, categories: string[]): Listing => ({ id, name, summary, kind: 'app', version: '1.0.0', publisher: { name: '' }, categories, size: 0, updated: '' })
     const items = [l('com.a.one', 'Photos', 'edit notes on pictures', []), l('com.a.two', 'Notes', 'write', ['productivity']), l('com.a.three', 'Clock', 'time', ['utilities'])]
     expect(searchListings(items, 'notes').map((i) => i.name)).toEqual(['Notes', 'Photos'])
     expect(searchListings(items, '', { category: 'utilities' }).map((i) => i.name)).toEqual(['Clock'])
     expect(searchListings(items, 'zzz')).toEqual([])
+  })
+})
+
+test.describe('kinds and requirements, without a browser', () => {
+  const entry = (id: string, extra: Record<string, unknown> = {}) => ({ id, name: id, version: '1.0.0', ...extra })
+
+  test('a listing without a kind is an app; an unknown kind is kept; a malformed one is refused', () => {
+    const { apps } = parseIndex({ apps: [entry('com.a.one'), entry('com.a.two', { kind: 'runtime', provides: { runtime: 'node', version: '20.18.0', commands: ['node'] } }), entry('com.a.three', { kind: 'widget' })] }, 'https://a.test')
+    expect(apps.map((a) => a.kind)).toEqual(['app', 'runtime', 'widget'])
+    expect(apps[1]!.provides).toEqual({ runtime: 'node', version: '20.18.0', commands: ['node'] })
+    expect(() => parseIndex({ apps: [entry('com.a.x', { kind: 'Not A Kind' })] }, 'https://a.test')).toThrow(/kind/)
+    expect(() => parseIndex({ apps: [entry('com.a.x', { kind: 'runtime', provides: { version: '1.0.0' } })] }, 'https://a.test')).toThrow(/runtime or a framework/)
+  })
+
+  test('version records carry manifest.requires, and a bad range is refused', () => {
+    const rec = (requires: unknown) => ({ ...entry('com.a.app'), versions: [{ version: '1.0.0', artifact: { url: 'v/1', sha256: 'a'.repeat(64) }, manifest: { permissions: [], requires } }] })
+    expect(parseApp(rec([{ runtime: 'node', range: '^20' }, { framework: 'wasi', range: '^1' }]), 'https://a.test').versions[0]!.manifest.requires).toEqual([{ runtime: 'node', range: '^20' }, { framework: 'wasi', range: '^1' }])
+    expect(parseApp(rec(undefined), 'https://a.test').versions[0]!.manifest.requires).toBeUndefined()
+    expect(() => parseApp(rec([{ runtime: 'node', range: 'banana' }]), 'https://a.test')).toThrow(/range/)
+    expect(() => parseApp(rec([{ range: '^1' }]), 'https://a.test')).toThrow(/runtime or a framework/)
+  })
+
+  test('search by kind, and matching a requirement picks the highest satisfying version first', () => {
+    const l = (id: string, kind: string, provides?: Listing['provides']): Listing => ({ ...entry(id), kind, provides, summary: '', publisher: { name: '' }, categories: [], size: 0, updated: '' } as Listing)
+    const items = [l('com.a.app', 'app'), l('com.a.n18', 'runtime', { runtime: 'node', version: '18.1.0' }), l('com.a.n20', 'runtime', { runtime: 'node', version: '20.1.0' }), l('com.a.n20b', 'runtime', { runtime: 'node', version: '20.18.0' }), l('com.a.wasi', 'framework', { framework: 'wasi', version: '1.0.0' })]
+    expect(searchListings(items, '', { kind: 'runtime' }).map((i) => i.id).sort()).toEqual(['com.a.n18', 'com.a.n20', 'com.a.n20b'])
+    expect(matchProvides(items, { runtime: 'node', range: '^20' }).map((i) => i.id)).toEqual(['com.a.n20b', 'com.a.n20'])
+    expect(matchProvides(items, { runtime: 'node', range: '^22' })).toEqual([])
+    expect(matchProvides(items, { framework: 'wasi', range: '^1' }).map((i) => i.id)).toEqual(['com.a.wasi'])
+    expect(matchProvides(items, { framework: 'node', range: '*' })).toEqual([]) // a runtime is not a framework
   })
 })
 
@@ -326,5 +356,122 @@ test.describe('the service', () => {
     })
     expect(after.refresh[0].error.code).toBe('EACCES')
     expect(after.list[0].enabled).toBe(false)
+  })
+})
+
+test.describe('the service: kinds and requirements', () => {
+  test.use({ system: true, helpers: true })
+  test.beforeEach(async ({ page }) => {
+    await page.evaluate(() => void window.attachDrivers())
+    await page.waitForTimeout(200)
+  })
+
+  /** A source whose index lists an app, two Node runtimes and a framework; the app requires Node ^20. */
+  function kindRegistry(host: string, registryId: string, nodeVersions: string[]): Mock {
+    const mock = registry(host, { id: registryId, name: host.split('.')[0]!.toUpperCase() })
+    const base = `https://${host}`
+    const runtimes = nodeVersions.map((v) => ({ id: `org.${host.split('.')[0]}.node-${v.replace(/\./g, '-')}`, name: `Node ${v}`, summary: 'JavaScript runtime', kind: 'runtime', provides: { runtime: 'node', version: v, commands: ['node'] }, version: v, publisher: { name: 'Acme' }, categories: ['runtimes'], size: 5, updated: '2026-11-01' }))
+    const wasi = { id: 'org.acme.wasi', name: 'WASI', summary: 'System interface', kind: 'framework', provides: { framework: 'wasi', version: '1.0.0' }, version: '1.0.0', publisher: { name: 'Acme' }, categories: [], size: 1, updated: '2026-11-01' }
+    const index = JSON.parse(mock.files.get('/index.json') as string)
+    index.apps.push(...runtimes, wasi)
+    mock.files.set('/index.json', JSON.stringify(index))
+    const rec = JSON.parse(mock.files.get('/apps/com.acme.notes/app.json') as string)
+    rec.versions[0].manifest.requires = [{ runtime: 'node', range: '^20' }]
+    mock.files.set('/apps/com.acme.notes/app.json', JSON.stringify(rec))
+    void base
+    return mock
+  }
+
+  test('search keeps listings\' kind and provides, defaults to app, and filters by kind', async ({ page }) => {
+    await serve(page, 'a.test', kindRegistry('a.test', 'org.a.apps', ['18.20.0', '20.18.0']))
+    const out = await page.evaluate(async () => {
+      await window.ask('sources', { op: 'add', url: 'a.test' })
+      return {
+        all: await window.ask('sources', { op: 'search', query: '' }),
+        runtimes: await window.ask('sources', { op: 'search', query: '', kind: 'runtime' }),
+        node: await window.ask('sources', { op: 'search', query: 'node', kind: 'framework' }),
+        app: await window.ask('sources', { op: 'app', sourceId: 'a', appId: 'com.acme.notes' }),
+      }
+    })
+    const byId = Object.fromEntries(out.all[0].apps.map((a: { id: string }) => [a.id, a]))
+    expect(byId['com.acme.notes']).toMatchObject({ kind: 'app' })
+    expect(byId['org.a.node-20-18-0']).toMatchObject({ kind: 'runtime', provides: { runtime: 'node', version: '20.18.0', commands: ['node'] } })
+    expect(out.runtimes[0].apps.map((a: { id: string }) => a.id).sort()).toEqual(['org.a.node-18-20-0', 'org.a.node-20-18-0'])
+    expect(out.node[0].apps).toEqual([])
+    expect(out.app.versions[0].manifest.requires).toEqual([{ runtime: 'node', range: '^20' }])
+  })
+
+  test('resolveRequirement: matching listings per source, best first, the named source first, none installed', async ({ page }) => {
+    await serve(page, 'a.test', kindRegistry('a.test', 'org.a.apps', ['18.20.0', '20.1.0', '20.18.0']))
+    await serve(page, 'b.test', kindRegistry('b.test', 'org.b.apps', ['20.5.0']))
+    const out = await page.evaluate(async () => {
+      await window.ask('sources', { op: 'add', url: 'a.test' })
+      await window.ask('sources', { op: 'add', url: 'b.test' })
+      const ask = (extra: object) => window.ask('sources', { op: 'resolveRequirement', ...extra })
+      return {
+        plain: await ask({ runtime: 'node', range: '^20' }),
+        preferB: await ask({ runtime: 'node', range: '^20', sourceId: 'b' }),
+        none: await ask({ runtime: 'node', range: '^22' }),
+        fw: await ask({ framework: 'wasi', range: '^1' }),
+        both: await ask({ runtime: 'node', framework: 'wasi', range: '^1' }),
+        badRange: await ask({ runtime: 'node', range: 'banana' }),
+        listed: (await window.kernel.bundleList()).length,
+      }
+    })
+    const ids = (groups: Array<{ sourceId: string; apps: Array<{ id: string }> }>) => groups.map((g) => [g.sourceId, g.apps.map((a) => a.id)])
+    expect(ids(out.plain)).toEqual([['a', ['org.a.node-20-18-0', 'org.a.node-20-1-0']], ['b', ['org.b.node-20-5-0']]])
+    expect(ids(out.preferB).map((g) => g[0])).toEqual(['b', 'a'])
+    expect(out.none).toEqual([])
+    expect(ids(out.fw)).toEqual([['a', ['org.acme.wasi']], ['b', ['org.acme.wasi']]])
+    expect(out.both).toEqual({ error: 'EINVAL' })
+    expect(out.badRange).toEqual({ error: 'EINVAL' })
+  })
+
+  test('a runtime prepares like an app, installs through the caller, and then satisfies the requirement', async ({ page }) => {
+    const mock = kindRegistry('a.test', 'org.a.apps', ['20.18.0'])
+    const base = 'https://a.test'
+    // a directory runtime bundle, hashed
+    const launcher = 'export default async (tiny) => {}'
+    const manifest = JSON.stringify({ id: 'org.a.node-20-18-0', name: 'Node 20.18.0', version: '20.18.0', kind: 'runtime', entry: 'launcher.js', permissions: [], provides: { name: 'node', version: '20.18.0', commands: ['node'] }, hashes: { 'launcher.js': sha(launcher) } })
+    mock.files.set('/apps/org.a.node-20-18-0/20.18.0/manifest.json', manifest)
+    mock.files.set('/apps/org.a.node-20-18-0/20.18.0/launcher.js', launcher)
+    const rec = { id: 'org.a.node-20-18-0', name: 'Node 20.18.0', summary: '', kind: 'runtime', provides: { runtime: 'node', version: '20.18.0' }, version: '20.18.0', publisher: { name: 'Acme' }, categories: [], size: 1, updated: '', description: '', screenshots: [], versions: [{ version: '20.18.0', created: '', artifact: { kind: 'directory', url: `${base}/apps/org.a.node-20-18-0/20.18.0`, sha256: sha(manifest), size: 1 }, manifest: { permissions: [] } }] }
+    mock.files.set('/apps/org.a.node-20-18-0/app.json', JSON.stringify(rec))
+    await serve(page, 'a.test', mock)
+    const out = await page.evaluate(async () => {
+      await window.ask('sources', { op: 'add', url: 'a.test' })
+      const need = [{ runtime: 'node', range: '^20' }]
+      const before = await window.ask('sources', { op: 'unmet', requires: need })
+      const p = await window.ask('sources', { op: 'prepare', sourceId: 'a', appId: 'org.a.node-20-18-0' })
+      const notes = await window.ask('sources', { op: 'prepare', sourceId: 'a', appId: 'com.acme.notes' })
+      const info = await window.kernel.bundleInstall({ files: p.files })
+      await window.ask('sources', { op: 'record', id: info.id, sourceId: p.sourceId, version: p.version, digest: p.digest })
+      return { before, kind: p.kind, requires: notes.requires, installed: info.kind, after: await window.ask('sources', { op: 'unmet', requires: need }), prov: await window.ask('sources', { op: 'provenance', id: info.id }) }
+    })
+    expect(out.before).toMatchObject([{ kind: 'runtime', name: 'node', reason: 'not installed' }])
+    expect(out).toMatchObject({ kind: 'directory', requires: [{ runtime: 'node', range: '^20' }], installed: 'runtime', after: [], prov: { sourceId: 'a', version: '20.18.0' } })
+  })
+
+  test('a search-only, unsigned source is asked with kind= and its answer is checked like an index', async ({ page }) => {
+    const mock: Mock = { files: new Map(), hits: [] }
+    mock.files.set('/.well-known/pear-registry.json', JSON.stringify({ protocol: 1, id: 'org.s.apps', name: 'S', capabilities: ['search'] }))
+    const node = { id: 'org.s.node', name: 'Node', summary: '', kind: 'runtime', provides: { runtime: 'node', version: '20.1.0' }, version: '20.1.0', publisher: { name: 'S' }, categories: [], size: 1, updated: '' }
+    mock.files.set('/apps', JSON.stringify({ apps: [node] }))
+    mock.files.set('/resolve', JSON.stringify({ apps: [node] }))
+    await page.route('https://s.test/**', async (route) => {
+      const url = new URL(route.request().url())
+      if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers: CORS })
+      mock.hits.push(url.pathname + url.search)
+      const body = mock.files.get(url.pathname)
+      return route.fulfill({ status: body === undefined ? 404 : 200, headers: { ...CORS, 'content-type': 'application/json' }, body: body ?? 'no' })
+    })
+    const out = await page.evaluate(async () => {
+      await window.ask('sources', { op: 'add', url: 's.test' })
+      return { found: await window.ask('sources', { op: 'search', query: 'node', kind: 'runtime' }), resolved: await window.ask('sources', { op: 'resolveRequirement', runtime: 'node', range: '^20' }) }
+    })
+    expect(out.found[0].apps.map((a: { id: string }) => a.id)).toEqual(['org.s.node'])
+    expect(out.resolved[0].apps.map((a: { id: string }) => a.id)).toEqual(['org.s.node'])
+    expect(mock.hits).toContain('/apps?q=node&kind=runtime&limit=50')
+    expect(mock.hits.some((h) => h.startsWith('/resolve?runtime=node&range='))).toBe(true)
   })
 })

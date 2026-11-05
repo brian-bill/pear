@@ -73,7 +73,7 @@ async function collect(list: Installed[]): Promise<void> {
   containers = []
   explorerViews = []
   welcomes = []
-  for (const ext of list.filter((e) => e.enabled && e.manifest.browser)) {
+  for (const ext of list.filter((e) => e.enabled && (e.manifest.browser || e.manifest.main))) {
     const c = ext.manifest.contributes as Record<string, unknown> | undefined
     if (!c) continue
     const nls = await nlsOf(ext)

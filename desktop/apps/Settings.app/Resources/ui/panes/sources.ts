@@ -1,8 +1,8 @@
 import { tiny } from '@tiny/sdk'
 import { attempt, button, group, h, line, say, sys, toggle } from '../lib'
 
-/// App sources (`contracts/app-registry.md`): the list of places apps can be installed from, a way to add one, and
-/// browsing, installing and updating from them. The `tiny.sources` service does the work; this is the view.
+/// App sources: the list of places apps can be installed from, and a way to add one.
+/// Browsing, installing and updating live in the App Store. The `tiny.sources` service does the work; this is the view.
 
 interface SourceRow {
   id: string
@@ -24,34 +24,8 @@ interface Preview {
   signed: boolean
   apps: number | null
 }
-interface Listing { id: string; name: string; summary: string; version: string; publisher: { name: string }; categories: string[] }
-interface Group { sourceId: string; sourceName: string; stale: boolean; total: number; apps: Listing[]; error?: { code: string; message: string } }
-interface AppRecord extends Listing { description: string; sourceName: string; versions: Array<{ version: string; yanked?: { reason: string }; manifest: { permissions: string[] } }> }
-interface Update { id: string; name: string; sourceId: string; installed: string; available: string | null; permissionsAdded?: string[]; problem?: string; yanked?: string }
 interface Installed { sourceId: string; version: string }
-interface Prepared {
-  kind: 'archive' | 'directory'
-  bytes?: Uint8Array
-  files?: Record<string, Uint8Array>
-  appId: string
-  version: string
-  digest: string
-  sourceId: string
-  sourceUrl: string
-  permissions: string[]
-}
-
-/** Hand a checked version to the kernel: a package is verified again there against the listing; a directory was checked by the service. */
-async function place(p: Prepared, update: boolean): Promise<{ id: string; name: string }> {
-  const from = { kind: 'registry', sourceId: p.sourceId, url: p.sourceUrl, version: p.version, digest: p.digest, unsigned: true }
-  if (p.kind === 'archive') {
-    return k('bundleInstallArchive', new Blob([p.bytes as BlobPart]), { update, expectDigest: p.digest, expect: { id: p.appId, version: p.version, permissions: p.permissions }, from })
-  }
-  return update ? k('bundleUpdate', p.appId, { files: p.files }, { from }) : k('bundleInstall', { files: p.files }, { from })
-}
-
 const svc = <T,>(msg: Record<string, unknown>) => sys<T>('tiny.sources', msg)
-const k = <T,>(m: string, ...a: unknown[]) => tiny.admin.kernel<T>(m, ...a)
 
 const ago = (iso?: string): string => {
   if (!iso) return ''
@@ -120,85 +94,12 @@ export async function sourcesSection(onChange: () => void, openWith?: string): P
   return section
 }
 
-/** What the user is told before an app installs from a source. */
-async function confirmInstall(rec: AppRecord, version: string, permissions: string[], source: SourceRow | undefined, verb: string, extra: string[] = []): Promise<boolean> {
-  const warn = source?.origin === 'user' && (await k<string | boolean>('configGet', 'tiny.apps.sources', 'warnUserSources', true)) !== false
-  const detail = [
-    `Version ${version} · from ${source?.name ?? rec.sourceName} (${source?.host ?? '?'})${rec.publisher.name ? ` · by ${rec.publisher.name}` : ''}`,
-    permissions.length ? `Can ask to use: ${permissions.join(', ')}.` : 'Asks for no special access.',
-    ...extra,
-    'This version has no verified publisher.',
-    warn ? 'This source was added by you, not built in. Only install apps you trust.' : '',
-  ].filter(Boolean).join('\n')
-  return tiny.dialogs.confirm(`${verb} “${rec.name}”?`, { detail, buttons: [verb, 'Cancel'] })
-}
-
-async function installFrom(sourceId: string, appId: string, done: () => void): Promise<void> {
-  const [rec, sources] = await Promise.all([attempt(() => svc<AppRecord>({ op: 'app', sourceId, appId })), svc<SourceRow[]>({ op: 'list' })])
-  if (!rec) return
-  const v = rec.versions.find((x) => !x.yanked && !x.version.includes('-')) ?? rec.versions.find((x) => !x.yanked)
-  if (!v) return void say(`${rec.name} has no version that can be installed.`, true)
-  if (!(await confirmInstall(rec, v.version, v.manifest.permissions, sources.find((s) => s.id === sourceId), 'Install'))) return
-  const done_ = await attempt(async () => {
-    const p = await svc<Prepared>({ op: 'prepare', sourceId, appId, version: v.version })
-    const info = await place(p, false)
-    await svc({ op: 'record', id: info.id, sourceId: p.sourceId, version: p.version, digest: p.digest })
-    return info
-  }, `${rec.name} was installed.`)
-  if (done_) done()
-}
-
-async function update(u: Update, done: () => void): Promise<void> {
-  const sources = await svc<SourceRow[]>({ op: 'list' })
-  const rec = await attempt(() => svc<AppRecord>({ op: 'app', sourceId: u.sourceId, appId: u.id }))
-  if (!rec || !u.available) return
-  const v = rec.versions.find((x) => x.version === u.available)
-  const extra = u.permissionsAdded?.length ? [`This update asks for more access: ${u.permissionsAdded.join(', ')}.`] : []
-  if (!(await confirmInstall(rec, u.available, v?.manifest.permissions ?? [], sources.find((s) => s.id === u.sourceId), 'Update', extra))) return
-  const ok = await attempt(async () => {
-    const p = await svc<Prepared>({ op: 'prepareUpdate', id: u.id, allowNewPermissions: Boolean(u.permissionsAdded?.length) })
-    await place(p, true)
-    await svc({ op: 'record', id: u.id, sourceId: p.sourceId, version: p.version, digest: p.digest })
-    return true
-  }, `${u.name} was updated.`)
-  if (ok) done()
-}
-
-/** Find apps in the enabled sources and install them. */
-export function browseSection(onInstalled: () => void): { el: HTMLElement; refresh: () => Promise<void> } {
-  const results = h('div', { class: 'group', id: 'source-results' })
-  const box = h('input', { type: 'search', placeholder: 'Search apps in your sources', 'aria-label': 'Search apps in your sources' }) as HTMLInputElement
-  const search = async (): Promise<void> => {
-    const groups = await attempt(() => svc<Group[]>({ op: 'search', query: box.value }))
-    if (!groups) return
-    const rows: HTMLElement[] = []
-    for (const g of groups) {
-      if (g.error) rows.push(line(`${g.sourceName}: ${g.error.message}`, undefined, g.stale ? 'Showing the last copy that could be checked.' : undefined))
-      for (const a of g.apps) {
-        rows.push(h('div', { class: 'line', 'data-listing': a.id },
-          h('div', { class: 'label' }, a.name, h('small', null, `${a.summary || a.id} · ${a.version} · ${g.sourceName}`)),
-          h('div', { class: 'ctl' }, button('Install', () => installFrom(g.sourceId, a.id, () => { onInstalled(); void search() }), '', { 'aria-label': `Install ${a.name} from ${g.sourceName}` }))))
-      }
-    }
-    results.replaceChildren(...(rows.length ? rows : [line(box.value ? 'Nothing found.' : 'The enabled sources list no apps yet.')]))
-  }
-  box.addEventListener('input', () => void search())
-  void search()
-  return { el: h('section', { id: 'get-apps' }, h('h2', null, 'Get apps'), group(null, line('Search', box)), results), refresh: search }
-}
-
-/** Updates for apps installed from a source: only that source is asked. */
-export function updatesSection(onUpdated: () => void): HTMLElement {
-  const list = h('div', { class: 'group' }, line('Not checked yet.'))
-  const check = async (): Promise<void> => {
-    const ups = await attempt(() => svc<Update[]>({ op: 'updates' }))
-    if (!ups) return
-    list.replaceChildren(...(ups.length ? ups.map((u) => h('div', { class: 'line', 'data-update': u.id },
-      h('div', { class: 'label' }, u.name, h('small', null, u.problem ? `Could not check: ${u.problem}` : `${u.installed} → ${u.available ?? 'withdrawn'}${u.yanked ? ` · this version was withdrawn: ${u.yanked}` : ''}${u.permissionsAdded?.length ? ` · asks for more access: ${u.permissionsAdded.join(', ')}` : ''}`)),
-      h('div', { class: 'ctl' }, u.available ? button('Update', () => update(u, () => { onUpdated(); void check() }), '', { 'aria-label': `Update ${u.name}` }) : null))) : [line('Everything installed from a source is up to date.')]))
-  }
-  return h('section', { id: 'app-updates' }, h('h2', null, 'Updates'), list,
-    h('div', { class: 'line' }, h('div', { class: 'ctl' }, button('Check for Updates', check))))
+/** Browsing, installing and updating live in the App Store; this is the pointer to it. */
+export function storeSection(): HTMLElement {
+  return h('section', { id: 'get-apps' }, h('h2', null, 'Get apps and updates'),
+    group(null, h('div', { class: 'line' },
+      h('div', { class: 'label' }, 'Find apps, developer tools and runtimes, and install updates, in the App Store.', h('small', null, 'It uses the sources below. Each app is reviewed before it installs.')),
+      h('div', { class: 'ctl' }, button('Open App Store', () => tiny.shell.openApp('org.tiny.appstore'))))))
 }
 
 /** `appId -> source name`, for the installed list. */

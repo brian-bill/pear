@@ -212,7 +212,7 @@ test('changes made elsewhere show up when the window gains focus again', async (
   await expect(f.getByRole('button', { name: 'Dark', exact: true })).toHaveAttribute('aria-pressed', 'true')
 })
 
-// ---- app sources (contracts/app-registry.md)
+// ---- app sources
 
 /** A registry on https://apps.acme.test whose one app is served as a directory with hashes. */
 async function acmeRegistry(page: Desktop['page'], version = '1.0.0') {
@@ -263,20 +263,33 @@ test('app sources: the built-in source is listed and cannot be removed; a user s
   await expect(acme).toContainText('Added by you')
   await expect(acme).toContainText('Online')
 
+  // Get apps and Updates moved to the App Store; Settings points to it
+  await expect(f.locator('#get-apps')).toContainText('App Store')
+  await expect(f.getByRole('button', { name: 'Install Acme Notes from Acme Apps' })).toHaveCount(0)
+  await f.getByRole('button', { name: 'Open App Store' }).click()
+  await expect(desktop.win('App Store')).toBeVisible()
+  const store = desktop.win('App Store').frameLocator('iframe')
+
   // install: the prompt names the source and what the app can ask for
-  await f.getByRole('button', { name: 'Install Acme Notes from Acme Apps' }).click()
+  await store.locator('#nav .item', { hasText: /^Apps/ }).click()
+  await store.getByRole('button', { name: 'Install Acme Notes from Acme Apps' }).click()
   await expect(page.locator('.sheet')).toContainText('Install “Acme Notes”?')
   await expect(page.locator('.sheet')).toContainText('apps.acme.test')
   await expect(page.locator('.sheet')).toContainText('added by you')
   await page.locator('.sheet button.primary').click()
+  await expect(store.locator('#status')).toContainText('Acme Notes was installed')
+  await desktop.dock('org.tiny.settings').click() // the window is shown again, and re-reads
   await expect(f.locator('.line[data-app="com.acme.notes"]')).toContainText('from Acme Apps')
 
   // update from the same source
   await acmeRegistry(page, '1.1.0')
-  await f.getByRole('button', { name: 'Check for Updates' }).click()
-  await expect(f.locator('[data-update="com.acme.notes"]')).toContainText('1.0.0 → 1.1.0')
-  await f.getByRole('button', { name: 'Update Acme Notes' }).click()
+  await desktop.dock('org.tiny.appstore').click()
+  await store.locator('#nav .item', { hasText: /^Updates/ }).click()
+  await expect(store.locator('[data-update="com.acme.notes"]')).toContainText('1.0.0 → 1.1.0')
+  await store.getByRole('button', { name: 'Update Acme Notes' }).click()
   await page.locator('.sheet button.primary').click()
+  await expect(store.locator('#status')).toContainText('Acme Notes was updated')
+  await desktop.dock('org.tiny.settings').click() // the window is shown again, and re-reads
   await expect(f.locator('.line[data-app="com.acme.notes"]')).toContainText('version 1.1.0')
 
   // a source can be turned off (it leaves search) and removed (installed apps stay)

@@ -1,7 +1,3 @@
-// VS Code web extensions (contracts/code-extensions.md): the pure part. Reading a `.vsix` (a zip),
-// validating its manifest, deciding whether it can run here, and talking to Open VSX. Nothing in
-// this file touches the VFS or Monaco, and nothing in it executes extension code.
-
 export class VsxError extends Error {
   constructor(message: string, public code: string) {
     super(message)
@@ -92,7 +88,8 @@ export interface VsxManifest {
   version: string
   displayName?: string
   description?: string
-  engines?: { vscode?: string }
+  engines?: { vscode?: string; node?: string }
+  type?: string
   main?: string
   browser?: string
   extensionKind?: string[]
@@ -145,14 +142,40 @@ export const entryCandidates = (entry: string): string[] => {
 }
 
 export type Compat =
-  | { ok: true; kind: 'declarative' | 'web' }
-  | { ok: false; kind: 'node'; reason: string }
+  | { ok: true; kind: 'declarative' | 'web' | 'node' | 'both' }
+  | { ok: false; kind: 'node' | 'unsupported'; reason: string }
 
 /** Can this run in the web extension host? Code with only a Node `main` cannot. */
 export function webCompat(m: VsxManifest): Compat {
   if (m.browser) return { ok: true, kind: 'web' }
   if (m.main) return { ok: false, kind: 'node', reason: 'This extension needs Node.js (it has no "browser" entry), so it cannot run in a browser.' }
   return { ok: true, kind: 'declarative' }
+}
+
+export const NEEDS_NODE = 'This extension needs the Node.js runtime. Add it in Settings ▸ Runtimes.'
+
+/** `a` is a version, `range` is `>=20`, `^18`, `20.x`...: true when the version satisfies the lower bound the range names. */
+const satisfiesNode = (version: string, range: string): boolean => {
+  const want = range.match(/(\d+)(?:\.(\d+))?(?:\.(\d+))?/)
+  if (!want) return true
+  const [a = 0, b = 0, c = 0] = version.split('.').map((n) => parseInt(n, 10) || 0)
+  const [x, y = 0, z = 0] = [parseInt(want[1]!, 10), parseInt(want[2] ?? '0', 10), parseInt(want[3] ?? '0', 10)]
+  if (/^\s*(<|<=)/.test(range)) return true
+  return a > x || (a === x && (b > y || (b === y && c >= z)))
+}
+
+/**
+ * Where can this extension run? `node` is the installed Node.js runtime's version (null: none installed). An extension with a
+ * `browser` entry runs in the web host (also when it has a `main`: `both`); one with only `main` runs in the Node host when a
+ * runtime is installed. Refused, with the reason: no runtime, `engines.node` newer than the runtime, an ES-module `main`.
+ */
+export function compatibility(m: VsxManifest, node: string | null): Compat {
+  if (m.browser) return { ok: true, kind: m.main && node ? 'both' : 'web' }
+  if (!m.main) return { ok: true, kind: 'declarative' }
+  if (!node) return { ok: false, kind: 'node', reason: NEEDS_NODE }
+  if (m.engines?.node && !satisfiesNode(node, m.engines.node)) return { ok: false, kind: 'unsupported', reason: `This extension needs Node.js ${m.engines.node}; the installed runtime is ${node}.` }
+  if (m.type === 'module' || /\.mjs$/.test(m.main)) return { ok: false, kind: 'unsupported', reason: 'This extension’s main entry is an ES module, which the Node.js runtime does not load yet.' }
+  return { ok: true, kind: 'node' }
 }
 
 /** The VS Code API version the host provides; `engines.vscode` newer than this warns. */

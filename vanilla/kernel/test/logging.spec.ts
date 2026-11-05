@@ -1,4 +1,4 @@
-/** The system log, crash reports, diagnostics and traces (`contracts/logging.md`). */
+/** The system log, crash reports, diagnostics and traces. */
 import { expect, test } from './fixtures'
 
 test.use({ system: true, helpers: true })
@@ -137,7 +137,7 @@ test('diag.snapshot describes processes and traces count syscalls and marks', as
   expect(out.marks).toEqual(['a', 'b'])
   expect(out.measure).toBe('work')
   expect(out.syscalls).toBe(true)
-  expect(out.services).toBe(15)
+  expect(out.services).toBe(16)
   expect(out.ports).toBe(true)
   expect(out.dup).toBe('EEXIST')
 })

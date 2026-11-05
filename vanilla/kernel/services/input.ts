@@ -53,7 +53,7 @@ const str = (v: unknown, max = 64) => (typeof v === 'string' ? v.slice(0, max) :
 const oneOf = <T extends string>(v: unknown, list: readonly T[], d: T): T => (list.includes(v as T) ? (v as T) : d)
 
 /**
- * `tiny.input`: the stream of host input events, normalised (`contracts/input.md`). The page's driver pushes raw
+ * `tiny.input`: the stream of host input events, normalised. The page's driver pushes raw
  * events; this service maps modifiers (Cmd), drops what it does not know, and delivers `{type: 'input', ...}` to
  * subscribers and grabbers. Only the system (Desktop, root services) may subscribe or grab: apps get input from
  * Desktop, which knows which window has the focus.

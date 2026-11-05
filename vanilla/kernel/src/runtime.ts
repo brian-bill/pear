@@ -88,7 +88,7 @@ export interface Pear extends FsApi {
   getgroups(): Promise<number[]>
   getappid(): Promise<string | null>
 
-  /** Settings (`contracts/configuration.md`). Reads see user over system over default; an app may write only domains under its own id. */
+  /** Settings. Reads see user over system over default; an app may write only domains under its own id. */
   configGet(domain: string, key: string, fallback?: ConfigValue): Promise<ConfigValue>
   configSet(domain: string, key: string, value: unknown, opts?: ActingFor & { scope?: ConfigScope }): Promise<null>
   configDelete(domain: string, key: string, opts?: ActingFor & { scope?: ConfigScope }): Promise<null>
@@ -98,17 +98,27 @@ export interface Pear extends FsApi {
   configWatch(domain: string, key: string | null, port: number): Promise<null>
   configUnwatch(port: number): Promise<null>
 
-  /** Capabilities (`contracts/permissions.md`). Programs outside any app hold them all. */
+  /** Capabilities. Programs outside any app hold them all. */
   permCheck(capability: string, scope?: string, opts?: ActingFor): Promise<Status>
   /** Asks the user through Desktop if undecided; with no prompt handler the answer is `denied`. */
   permRequest(capability: string, opts?: ActingFor): Promise<Status>
   permList(opts?: ActingFor): Promise<Grant[]>
 
   bundleList(): Promise<BundleInfo[]>
+  /** Installed language runtimes. */
+  runtimeList(): Promise<import('./runtimes').RuntimeInfo[]>
+  runtimeInfo(name: string, range?: string): Promise<import('./runtimes').RuntimeInfo | null>
+  runtimeResolve(query: import('./runtimes').RuntimeQuery): Promise<import('./runtimes').RuntimeInfo | null>
+  /** The embed script of a runtime, for an app that runs it in its own sandbox. `ENOSYS` if it has none. */
+  runtimeEmbed(name: string, opts?: { range?: string }): Promise<{ name: string; version: string; bundleId: string; abi: string[]; scriptPath: string }>
+  /** Which of these `{runtime|framework, range}` requirements nothing installed satisfies. */
+  runtimeUnmet(requires: import('./bundle').Requirement[]): Promise<import('./runtimes').Unmet[]>
+  frameworkList(): Promise<import('./runtimes').FrameworkInfo[]>
+  frameworkResolve(name: string, opts?: { range?: string }): Promise<import('./runtimes').FrameworkInfo | null>
   bundleInfo(id: string): Promise<BundleInfo>
 
   /**
-   * A project folder as a `.pearapp` (`contracts/app-distribution.md`). Reads the folder with the caller's own file rights
+   * A project folder as a `.pearapp`. Reads the folder with the caller's own file rights
    * and runs none of its code. `ENOENT` without a manifest, `EINVAL` for anything else wrong with it.
    */
   bundlePackage(project: string, opts?: { manifest?: Record<string, unknown>; version?: string; extra?: Record<string, string | Uint8Array>; exclude?: string[]; compress?: boolean }): Promise<Uint8Array>
@@ -197,6 +207,7 @@ const SYSTEM_CALLS = [
   'getuid', 'getgid', 'getgroups', 'getappid', 'driverEmit', 'logWrite', 'logQuery', 'fsChanges',
   'configGet', 'configSet', 'configDelete', 'configList', 'configReset', 'configWatch', 'configUnwatch',
   'permCheck', 'permRequest', 'permList', 'bundleList', 'bundleInfo', 'bundlePackage', 'bundleCheck', 'cryptoDigest', 'cryptoVerify',
+  'runtimeList', 'runtimeInfo', 'runtimeResolve', 'runtimeEmbed', 'runtimeUnmet', 'frameworkList', 'frameworkResolve',
   'launchOpen', 'launchOpenWith', 'launchApps', 'launchAppsFor', 'launchDefaultFor', 'launchSetDefault',
   'launchTypeOf', 'launchRunning', 'launchActivate', 'launchRecents', 'launchIconFor', 'launchTypeConflicts',
 ] as const

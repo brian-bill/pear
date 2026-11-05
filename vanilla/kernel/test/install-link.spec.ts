@@ -1,4 +1,4 @@
-/** Installing from a link (`contracts/app-distribution.md`): the `?install=` intent and `tiny.installer`. */
+/** Installing from a link: the `?install=` intent and `tiny.installer`. */
 import { createHash } from 'node:crypto'
 import { parseIntents, withoutIntents } from '../src/intents'
 import { expect, test } from './fixtures'

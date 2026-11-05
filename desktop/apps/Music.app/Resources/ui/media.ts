@@ -1,6 +1,6 @@
 import { dirname, joinPath, tiny } from '@tiny/sdk'
 
-/// Audio file types Music claims (`contracts/launch-services.md`): extension, then the MIME a decoder expects.
+/// Audio file types Music claims: extension, then the MIME a decoder expects.
 export const AUDIO_MIME: Record<string, string> = {
   mp3: 'audio/mpeg', wav: 'audio/wav', aif: 'audio/aiff', aiff: 'audio/aiff', aifc: 'audio/aiff',
   m4a: 'audio/mp4', m4b: 'audio/mp4', m4r: 'audio/mp4', aac: 'audio/aac', adts: 'audio/aac',

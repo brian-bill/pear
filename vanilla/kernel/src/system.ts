@@ -1,6 +1,6 @@
 /// The boot sequence after the kernel itself is up: create the default hierarchy on first run, install the
 /// userland and the system services, read settings, start the services, and report what happened.
-import { APPS, OS_VERSION, SYSTEM_APPS, type BundleManager } from './bundle'
+import { APPS, OS_VERSION, SYSTEM_APPS, SYSTEM_FRAMEWORKS, type BundleManager } from './bundle'
 import type { Config } from './config'
 import type { Logger } from './log'
 import type { FileSystem } from './fs'
@@ -14,6 +14,8 @@ export interface SystemOptions {
   userland?: string | URL | false
   /** `services.json` (service name -> source). `false` skips the services. Default: next to the kernel Worker. */
   services?: string | URL | false
+  /** `frameworks.json` (framework name -> bundle files) for `/System/Library/Frameworks`. `false` skips them. Default: next to the kernel Worker. */
+  frameworks?: string | URL | false
   /**
    * Start only what the system needs: no startup items, no third-party services, no session restore. The page
    * decides (a held key, a `?safe` URL, or after repeated crashes).
@@ -67,6 +69,7 @@ const SERVICES = [
   { file: 'network', id: 'org.tiny.service.network', name: 'Network Service', port: 'tiny.network' },
   { file: 'installer', id: 'org.tiny.service.installer', name: 'Installer Service', port: 'tiny.installer' },
   { file: 'sources', id: 'org.tiny.service.sources', name: 'App Sources Service', port: 'tiny.sources' },
+  { file: 'loopback', id: 'org.tiny.service.loopback', name: 'Loopback Service', port: 'tiny.loopback' },
   { file: 'system', id: 'org.tiny.service.system', name: 'System Info Service', port: 'tiny.system' },
 ] as const
 
@@ -112,11 +115,11 @@ interface SystemParts {
   logger?: Logger
 }
 
-async function fetchJson(url: string | URL, warnings: string[], what: string): Promise<Record<string, string> | null> {
+async function fetchJson<T = string>(url: string | URL, warnings: string[], what: string): Promise<Record<string, T> | null> {
   try {
     const res = await fetch(url)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return (await res.json()) as Record<string, string>
+    return (await res.json()) as Record<string, T>
   } catch (e) {
     warnings.push(`${what} not installed: ${(e as Error).message}`)
     return null
@@ -193,6 +196,16 @@ export async function bootSystem(parts: SystemParts, opts: SystemOptions, emit: 
       const installed = bundles.find(svc.id)
       if (!installed) await bundles.install({ files }, { location: SYSTEM_APPS })
       else if (dec.decode(await fs.readFile(installed.entryPath)) !== source) await bundles.update(svc.id, { files })
+    }
+  }
+  // The system frameworks (shared libraries such as WASI), kept in step with the build.
+  if (opts.frameworks !== false) {
+    const frameworks = await fetchJson<Record<string, string>>(opts.frameworks ?? new URL('frameworks.json', import.meta.url), warnings, 'frameworks')
+    for (const files of Object.values(frameworks ?? {})) {
+      const manifest = JSON.parse(files['manifest.json']!) as { id: string; provides: { module: string } }
+      const installed = bundles.find(manifest.id)
+      if (!installed) await bundles.install({ files }, { location: SYSTEM_FRAMEWORKS })
+      else if (dec.decode(await fs.readFile(`${installed.path}/${manifest.provides.module}`)) !== files[manifest.provides.module]) await bundles.update(manifest.id, { files })
     }
   }
   await bundles.scan()

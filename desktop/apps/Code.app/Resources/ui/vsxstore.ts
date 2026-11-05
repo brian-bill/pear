@@ -1,4 +1,4 @@
-// The extension manager's storage (contracts/code-extensions.md): installed extensions are plain
+// The extension manager's storage: installed extensions are plain
 // files in the VFS, listed in extensions.json. Install verifies and unpacks into a staging
 // directory, then moves it into place with one rename; no extension code runs during install.
 import { dirname, joinPath, tiny } from '@tiny/sdk'
@@ -18,7 +18,7 @@ import {
   readZip,
   searchOpenVsx,
   sha256Hex,
-  webCompat,
+  compatibility,
   type Listing,
   type Runnable,
   type VsxManifest,
@@ -39,7 +39,7 @@ export interface Installed {
   installedAt: string
   /** True for registry installs (Open VSX signs and verifies namespaces); sideloads and dev folders are unsigned. */
   signed: boolean
-  kind: 'declarative' | 'web'
+  kind: 'declarative' | 'web' | 'node' | 'both'
   warning?: string
   manifest: VsxManifest
 }
@@ -105,6 +105,20 @@ async function root(): Promise<string> {
 }
 
 /** Where an extension may write: its own storage folder (globalStorage), created on first use. */
+/** The installed Node.js runtime that can be embedded, or null. Code never installs it. */
+let node: { version: string; bundleId: string } | null = null
+export const nodeRuntime = (): { version: string; bundleId: string } | null => node
+export async function refreshNode(): Promise<boolean> {
+  let info: Awaited<ReturnType<typeof tiny.runtimeInfo>>
+  try {
+    info = await tiny.runtimeInfo('node')
+  } catch {
+    return node !== null // the question failed: keep the last answer, because a hiccup is not an uninstall
+  }
+  node = info && info.abi.includes('embed') ? { version: info.version, bundleId: info.bundleId } : null
+  return node !== null
+}
+
 export async function storageDir(id: string): Promise<string> {
   const dir = joinPath(dirname(await root()), `globalStorage/${id}`)
   await tiny.mkdir(dir, { recursive: true })
@@ -179,7 +193,7 @@ export const readExtText = async (ext: Installed, rel: string): Promise<string> 
 export interface Review {
   manifest: VsxManifest
   id: string
-  kind: 'declarative' | 'web'
+  kind: 'declarative' | 'web' | 'node' | 'both'
   files: number
   bytes: number
   warning: string | null
@@ -191,9 +205,11 @@ export async function inspect(bytes: Uint8Array): Promise<{ review: Review; file
   const files = await readZip(bytes)
   const prefix = findRoot(files)
   const manifest = parseManifest(new TextDecoder().decode(files.get(prefix + 'package.json')!))
-  const compat = webCompat(manifest)
+  await refreshNode()
+  const compat = compatibility(manifest, node?.version ?? null)
   if (!compat.ok) throw new VsxError(compat.reason, 'EINVAL')
   if (manifest.browser && !entryCandidates(manifest.browser).some((c) => files.has(prefix + c))) throw new VsxError(`The browser entry ${manifest.browser} is missing from the package.`, 'EINVAL')
+  if (!manifest.browser && manifest.main && !entryCandidates(manifest.main).some((c) => files.has(prefix + c))) throw new VsxError(`The main entry ${manifest.main} is missing from the package.`, 'EINVAL')
   let total = 0
   for (const [, b] of files) total += b.length
   return { files, prefix, review: { manifest, id: extId(manifest), kind: compat.kind, files: files.size, bytes: total, warning: engineWarning(manifest), unsigned: true } }
@@ -266,9 +282,11 @@ export async function installFolder(path: string): Promise<Installed> {
     throw new VsxError('No package.json in that folder.', 'ENOENT')
   }
   const manifest = parseManifest(text)
-  const compat = webCompat(manifest)
+  await refreshNode()
+  const compat = compatibility(manifest, node?.version ?? null)
   if (!compat.ok) throw new VsxError(compat.reason, 'EINVAL')
   if (manifest.browser && !(await anyExists(entryCandidates(manifest.browser).map((c) => joinPath(path, c))))) throw new VsxError(`The browser entry ${manifest.browser} is missing.`, 'EINVAL')
+  if (!manifest.browser && manifest.main && !(await anyExists(entryCandidates(manifest.main).map((c) => joinPath(path, c))))) throw new VsxError(`The main entry ${manifest.main} is missing.`, 'EINVAL')
   const warning = engineWarning(manifest)
   const record: Installed = {
     id: extId(manifest),

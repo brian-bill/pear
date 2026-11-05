@@ -1,0 +1,16 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="style.css"></head>
+<body>
+<div class="layout">
+  <nav class="sidebar" aria-label="App Store">
+    <input type="search" id="search" placeholder="Search" aria-label="Search the App Store">
+    <div id="nav" role="list"></div>
+  </nav>
+  <main class="content">
+    <header class="title"><button type="button" class="plain" id="back" aria-label="Back" hidden>‹ Back</button><h1 id="title"></h1><span class="spacer"></span><button type="button" id="refresh" aria-label="Refresh">Refresh</button></header>
+    <div class="scroll" id="view" tabindex="-1"></div>
+    <div class="status" id="status" role="status"></div>
+  </main>
+</div>
+<script src="main.js"></script>
+</body></html>

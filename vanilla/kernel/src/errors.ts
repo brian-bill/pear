@@ -41,9 +41,10 @@ export interface WireError {
   message: string
   code?: string
   path?: string
+  stack?: string
 }
 
 export function toWireError(e: unknown): WireError {
-  const err = e as { name?: string; message?: string; code?: string; path?: string }
-  return { name: err?.name ?? 'Error', message: err?.message ?? String(e), code: err?.code, path: err?.path }
+  const err = e as { name?: string; message?: string; code?: string; path?: string; stack?: string }
+  return { name: err?.name ?? 'Error', message: err?.message ?? String(e), code: err?.code, path: err?.path, stack: err?.stack }
 }
