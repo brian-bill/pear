@@ -9,7 +9,7 @@ import { ICONS, TYPE_ICONS } from './apps/icons'
 import type { AppInfo, AppRegistry } from './apps/registry'
 import { alertSheet, panel, promptSheet } from './shell/dialogs'
 import type { MenuBar, Menu, MenuItem } from './shell/menubar'
-import { showPopup } from './shell/popup'
+import { closePopup, showPopup } from './shell/popup'
 import { Win, type Rect, type WindowManager } from './wm/windows'
 
 // `wasm-unsafe-eval` lets an app compile WebAssembly (an app's entry may be wasm, and Code builds it); it does not allow eval()
@@ -36,9 +36,12 @@ const THEME_VARS = [
 const enc = new TextEncoder()
 const dec = new TextDecoder()
 
-/** Apps that manage the system. Their calls under `admin.` run as the system; every other app is refused. */
+/** Kernel calls that legitimately block for as long as the other side is quiet. */
+const BLOCKING = new Set(['read', 'wait', 'waitpid', 'accept', 'receive'])
+
 /** Calls that only read a path: in a project they look in the app's bundle first. */
 const READS = new Set(['readFile', 'readdir', 'stat', 'lstat', 'exists'])
+/** Apps that manage the system. Their calls under `admin.` run as the system; every other app is refused. */
 const ADMIN_APPS = new Set(['org.tiny.settings', 'org.tiny.activitymonitor', 'org.tiny.console', 'org.tiny.finder', 'org.tiny.installer', 'org.tiny.appstore'])
 /** The kernel calls `admin.kernel` passes through. Anything that moves the process table or the file system's contents stays out. */
 const ADMIN_KERNEL = new Set([
@@ -84,6 +87,8 @@ export class AppWindow {
   /** Messages posted before the page said it was ready. */
   queued: unknown[] = []
   asks = new Map<number, Pending>()
+  /** Folders (and files) this window asked to hear about (`tiny.watch`), as reference counts. */
+  watches = new Map<string, number>()
   state: unknown
   /** What this window was opened with; the app's own launch arguments when not given. */
   args: string[] | undefined
@@ -101,17 +106,19 @@ export class AppInstance {
   quitting = false
   constructor(readonly app: AppInfo, readonly pid: number, readonly ui: number, readonly events: number, readonly args: string[], private kernel: Kernel) {}
 
-  async raw(req: unknown, rights?: number[], timeout = 20_000): Promise<HostReply> {
+  /** `timeout: null` waits as long as it takes (the app dying wakes the wait). */
+  async raw(req: unknown, rights?: number[], timeout: number | null = 20_000): Promise<HostReply> {
     if (this.dead) return { ok: false, error: { code: 'ESRCH', message: `${this.app.name} is not running` } }
     try {
-      return (await this.kernel.request(this.ui, req, { rights, timeout })).data as HostReply
+      return (await this.kernel.request(this.ui, req, { rights, timeout: timeout ?? undefined })).data as HostReply
     } catch (e) {
       const err = e as { code?: string; message?: string }
       return { ok: false, error: { code: err.code ?? 'EIO', message: err.message ?? 'the app did not answer' } }
     }
   }
   async call(method: string, args: unknown[]): Promise<unknown> {
-    const r = await this.raw({ op: 'call', method, args })
+    // read/wait block until the other side has something (an idle shell prints nothing for minutes): they must not time out
+    const r = await this.raw({ op: 'call', method, args }, undefined, BLOCKING.has(method) ? null : undefined)
     if (!r.ok) throw Object.assign(new Error(r.error.message), { code: r.error.code })
     return r.result
   }
@@ -143,7 +150,18 @@ export class AppHost {
       if (e.type === 'process' && e.event === 'exited') this.processExited(e.pid, e.status.crashed, e.status.code, e.status.signal)
       else if (e.type === 'launch' && e.event === 'launched') void this.adopt(e.appId, e.pid)
       else if (e.type === 'launch' && e.event === 'activated') void this.activated(e.appId)
+      else if (e.type === 'fs') this.fsChanged(e.events)
     })
+  }
+
+  /** Tell each window the changes under the paths it watches. */
+  private fsChanged(events: Array<{ kind: string; path: string; oldPath: string | null }>): void {
+    const under = (p: string | null, root: string) => p !== null && (p === root || root === '/' || p.startsWith(`${root}/`))
+    for (const aw of this.byWin.values()) {
+      if (!aw.ready || !aw.watches.size) continue
+      const mine = events.filter((e) => [...aw.watches.keys()].some((root) => under(e.path, root) || under(e.oldPath, root)))
+      if (mine.length) aw.post({ t: 'event', name: 'fs', data: mine })
+    }
   }
 
   // ---- starting apps
@@ -378,6 +396,10 @@ export class AppHost {
       sdk.textContent = clientSource.replace(/<\/script/gi, '<\\/script')
       doc.head.prepend(sdk)
     }
+    // no browser context menu inside apps: only the ones the app draws itself
+    const noMenu = doc.createElement('script')
+    noMenu.textContent = "addEventListener('contextmenu',function(e){e.preventDefault()});addEventListener('pointerdown',function(){parent.postMessage({t:'dismiss'},'*')},true)"
+    doc.head.prepend(noMenu)
     const meta = doc.createElement('meta')
     meta.httpEquiv = 'Content-Security-Policy'
     meta.content = app.id === 'org.tiny.browser' ? BROWSER_CSP : app.id === 'org.tiny.code' ? CODE_CSP : CSP
@@ -493,6 +515,7 @@ export class AppHost {
     if (!aw) return
     const m = ev.data as UiToDesktop
     if (!m || typeof m !== 'object') return
+    if ((m as { t: string }).t === 'dismiss') return closePopup()
     if (m.t === 'note') return this.onNote(aw, m.kind, m.data)
     if (m.t === 'answer') {
       const p = aw.asks.get(m.reqId)
@@ -551,6 +574,20 @@ export class AppHost {
       }
     }
     switch (method) {
+      case 'fs.watch': {
+        const path = need<string>(args[0], 'path')
+        // the app must be able to see what it watches: its own permissions decide (this throws EACCES/ENOENT otherwise)
+        await inst.call('stat', [path])
+        aw.watches.set(path, (aw.watches.get(path) ?? 0) + 1)
+        return
+      }
+      case 'fs.unwatch': {
+        const path = String(args[0])
+        const n = (aw.watches.get(path) ?? 0) - 1
+        if (n > 0) aw.watches.set(path, n)
+        else aw.watches.delete(path)
+        return
+      }
       case 'service':
         return inst.service(need<string>(args[0], 'service'), args[1], args[2] as number | undefined)
       case 'window.setTitle':

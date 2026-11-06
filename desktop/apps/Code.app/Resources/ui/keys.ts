@@ -207,6 +207,8 @@ export const DEFAULT_KEYS: RawBinding[] = [
   { key: 'ctrlcmd+shift+u', command: 'workbench.action.output.toggleOutput' },
   { key: 'ctrlcmd+shift+m', command: 'workbench.actions.view.problems' },
   { key: 'ctrlcmd+shift+y', command: 'workbench.debug.action.toggleRepl' },
+  { key: 'ctrl+`', command: 'workbench.action.terminal.toggleTerminal' },
+  { key: 'ctrl+shift+`', command: 'workbench.action.terminal.new' },
   { key: 'ctrlcmd+k ctrlcmd+s', command: 'workbench.action.openGlobalKeybindings' },
   { key: 'ctrlcmd+k ctrlcmd+t', command: 'workbench.action.selectTheme' },
   { key: 'ctrlcmd+k v', command: 'markdown.showPreviewToSide' },

@@ -24,3 +24,11 @@ declare class Buffer {
   static from(data: string | number[], encoding?: string): Buffer
   toString(encoding?: string): string
 }
+
+declare module 'node:fs' {
+  export function readFileSync(path: string, encoding: string): string
+}
+
+declare module 'node:url' {
+  export function fileURLToPath(url: URL): string
+}

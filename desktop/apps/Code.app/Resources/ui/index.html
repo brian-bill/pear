@@ -137,6 +137,7 @@
             <button class="paneltab" id="panelTabProblems" role="tab" aria-selected="false">Problems<span id="problemsBadge" class="badge" hidden></span></button>
             <button class="paneltab" id="panelTabOutput" role="tab" aria-selected="true">Output</button>
             <button class="paneltab" id="panelTabConsole" role="tab" aria-selected="false">Debug Console<span id="consoleBadge" class="badge err" hidden></span></button>
+            <button class="paneltab" id="panelTabTerminal" role="tab" aria-selected="false">Terminal</button>
           </div>
           <span class="grow"></span>
           <select id="consoleFilter" class="modesel" aria-label="Filter console messages" hidden>
@@ -145,11 +146,18 @@
             <option value="warn">Warnings</option>
             <option value="log">Logs</option>
           </select>
+          <span id="termActions" class="termactions" hidden>
+            <select id="termList" class="modesel" title="Terminals" aria-label="Terminals"></select>
+            <button id="termNew" class="action" data-icon="add" title="New Terminal (Ctrl+Shift+`)" aria-label="New Terminal"></button>
+            <button id="termSplit" class="action" data-icon="split-horizontal" title="Split Terminal" aria-label="Split Terminal"></button>
+            <button id="termKill" class="action" data-icon="close" title="Kill Terminal" aria-label="Kill Terminal"></button>
+          </span>
           <button id="outclear" class="action" data-icon="clear-all" title="Clear Output" aria-label="Clear Output"></button>
           <button id="outclose" class="action" data-icon="close" title="Close Panel" aria-label="Hide output"></button>
         </div>
         <pre id="outlog" class="selectable" aria-live="polite"></pre>
         <div id="problemsList" class="problems" role="list" hidden></div>
+        <div id="terminalView" class="terminalview" hidden></div>
         <div id="consoleView" class="consoleview" hidden>
           <div id="consoleLog" class="consolelog selectable" role="log" aria-live="polite"></div>
           <label class="consoleprompt"><span data-icon="chevron-right" data-size="14" aria-hidden="true"></span><input id="consoleInput" type="text" spellcheck="false" autocomplete="off" placeholder="Evaluate in the running app (Enter to run, ↑ for history)" aria-label="Evaluate expression in the previewed app"></label>

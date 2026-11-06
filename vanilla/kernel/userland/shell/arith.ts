@@ -4,11 +4,14 @@ export interface ArithEnv {
   get(name: string): string | undefined
   /** Receives the result of `=`, `+=`, `++`, … Without it, assignments are errors. */
   set?(name: string, value: string): void
+  /** `name[key]` for arrays (an element's value, `undefined` if unset). */
+  getAt?(name: string, key: string): string | undefined
+  setAt?(name: string, key: string, value: string): void
 }
 
 type Tok = { k: 'num'; v: number } | { k: 'id'; v: string } | { k: 'op'; v: string }
 
-const OPS = ['<<=', '>>=', '**', '<<', '>>', '<=', '>=', '==', '!=', '&&', '||', '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=', '++', '--', '+', '-', '*', '/', '%', '<', '>', '=', '!', '~', '&', '|', '^', '?', ':', ',', '(', ')']
+const OPS = ['<<=', '>>=', '**', '<<', '>>', '<=', '>=', '==', '!=', '&&', '||', '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=', '++', '--', '+', '-', '*', '/', '%', '<', '>', '=', '!', '~', '&', '|', '^', '?', ':', ',', '(', ')', '[', ']']
 const ASSIGN = new Set(['=', '+=', '-=', '*=', '/=', '%=', '<<=', '>>=', '&=', '|=', '^='])
 
 function tokenize(src: string): Tok[] {
@@ -54,15 +57,49 @@ export function evalArith(src: string, env: ArithEnv, depth = 0): number {
   const bad = (): never => {
     throw new Error(`${src.trim()}: syntax error in expression`)
   }
-  const value = (name: string): number => {
-    const v = env.get(name)
+  /** A variable or an array element: `x` or `x[expr]`, with the subscript evaluated once however often it is looked at. */
+  type L = { name: string; key?: string; end: number }
+  const lvals = new Map<number, L | null>()
+  const lval = (from: number): L | null => {
+    if (lvals.has(from)) return lvals.get(from)!
+    const t = toks[from]
+    let out: L | null = null
+    if (t?.k === 'id') {
+      const n = toks[from + 1]
+      if (n?.k === 'op' && n.v === '[') {
+        let depth = 0
+        let j = from + 1
+        for (; j < toks.length; j++) {
+          const x = toks[j]!
+          if (x.k === 'op' && x.v === '[') depth++
+          else if (x.k === 'op' && x.v === ']' && --depth === 0) break
+        }
+        if (j >= toks.length) bad()
+        const saved = at
+        at = from + 2
+        const k = comma()
+        if (at !== j) bad()
+        at = saved
+        out = { name: t.v, key: String(k), end: j + 1 }
+      } else out = { name: t.v, end: from + 1 }
+    }
+    lvals.set(from, out)
+    return out
+  }
+  const value = (l: L): number => {
+    const v = l.key !== undefined ? env.getAt?.(l.name, l.key) : env.get(l.name)
     if (v === undefined || v.trim() === '') return 0
     return evalArith(v, env, depth + 1)
   }
-  const store = (name: string, v: number): number => {
+  const store = (l: L, v: number): number => {
     if (skip) return v
+    if (l.key !== undefined) {
+      if (!env.setAt) throw new Error(`${src.trim()}: assignment not allowed here`)
+      env.setAt(l.name, l.key, String(v))
+      return v
+    }
     if (!env.set) throw new Error(`${src.trim()}: assignment not allowed here`)
-    env.set(name, String(v))
+    env.set(l.name, String(v))
     return v
   }
   const int = (n: number) => n | 0
@@ -76,13 +113,13 @@ export function evalArith(src: string, env: ArithEnv, depth = 0): number {
     return v
   }
   const assign = (): number => {
-    const t = peek()
-    const n = toks[at + 1]
-    if (t?.k === 'id' && n?.k === 'op' && ASSIGN.has(n.v)) {
-      at += 2
+    const l = lval(at)
+    const n = l ? toks[l.end] : undefined
+    if (l && n?.k === 'op' && ASSIGN.has(n.v)) {
+      at = l.end + 1
       const rhs = assign()
-      if (n.v === '=') return store(t.v, rhs)
-      return store(t.v, binary(n.v.slice(0, -1), value(t.v), rhs))
+      if (n.v === '=') return store(l, rhs)
+      return store(l, binary(n.v.slice(0, -1), value(l), rhs))
     }
     return ternary()
   }
@@ -175,29 +212,35 @@ export function evalArith(src: string, env: ArithEnv, depth = 0): number {
       }
       if (t.v === '++' || t.v === '--') {
         at++
-        const id = peek()
-        if (id?.k !== 'id') return bad()
-        at++
-        return store(id.v, value(id.v) + (t.v === '++' ? 1 : -1))
+        const l = lval(at)
+        if (!l) return bad()
+        at = l.end
+        return store(l, value(l) + (t.v === '++' ? 1 : -1))
       }
     }
     return postfix()
   }
   const postfix = (): number => {
-    const t = peek()
-    if (t?.k === 'id' && toks[at + 1]?.k === 'op' && ['++', '--'].includes((toks[at + 1] as { v: string }).v)) {
-      const old = value(t.v)
-      store(t.v, old + ((toks[at + 1] as { v: string }).v === '++' ? 1 : -1))
-      at += 2
+    const l = lval(at)
+    const n = l ? toks[l.end] : undefined
+    if (l && n?.k === 'op' && (n.v === '++' || n.v === '--')) {
+      const old = value(l)
+      store(l, old + (n.v === '++' ? 1 : -1))
+      at = l.end + 1
       return old
     }
     return primary()
   }
   const primary = (): number => {
-    const t = toks[at++]
+    const t = toks[at]
     if (!t) return bad()
+    if (t.k === 'id') {
+      const l = lval(at)!
+      at = l.end
+      return value(l)
+    }
+    at++
     if (t.k === 'num') return t.v
-    if (t.k === 'id') return value(t.v)
     if (t.v === '(') {
       const v = comma()
       if (!isOp(')')) bad()

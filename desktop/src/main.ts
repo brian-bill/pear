@@ -16,6 +16,9 @@ declare global {
   }
 }
 
+// No browser context menu anywhere: only the ones the desktop and its apps draw themselves.
+document.addEventListener('contextmenu', (e) => e.preventDefault())
+
 const params = new URLSearchParams(location.search)
 /** Which file system this tab uses. `?ns=` gives tests and experiments a private one. */
 const namespace = params.get('ns') ?? 'tiny'

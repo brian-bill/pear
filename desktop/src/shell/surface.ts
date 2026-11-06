@@ -9,6 +9,7 @@ import type { MenuItem } from './menubar'
 
 /** Built-in wallpapers: `builtin:<name>` in the `tiny.desktop.wallpaper` setting. */
 export const WALLPAPERS: Record<string, { name: string; css?: string; url?: string; dark?: string }> = {
+  'pear': { name: 'Pear', url: '/wallpapers/pear.jpeg' },
   'one-piece': { name: 'One Piece', url: '/wallpapers/one-piece-4k.jpg' },
   aurora: { name: 'Aurora', css: 'linear-gradient(135deg, #5b8def 0%, #8e6ee8 45%, #e07bb5 100%)', dark: 'linear-gradient(135deg, #1b2a4a 0%, #3a2a5c 50%, #5a2a48 100%)' },
   dusk: { name: 'Dusk', css: 'linear-gradient(160deg, #ff9966 0%, #ff5e62 50%, #5b247a 100%)' },
@@ -18,7 +19,7 @@ export const WALLPAPERS: Record<string, { name: string; css?: string; url?: stri
 }
 
 /** What the desktop shows while `tiny.desktop.wallpaper.path` is unset. */
-export const DEFAULT_WALLPAPER = 'one-piece'
+export const DEFAULT_WALLPAPER = 'pear'
 
 interface Item {
   name: string

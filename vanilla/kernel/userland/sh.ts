@@ -5,6 +5,8 @@
 import { decoder, reason, type Pear } from './lib'
 import { ExitRequest, Shell } from './shell/shell'
 import { parse, ParseError } from './shell/parse'
+import { Readline } from './shell/readline'
+import { complete } from './shell/complete'
 
 class LineReader {
   private buf = ''
@@ -127,17 +129,53 @@ async function startupFiles(tiny: Pear, sh: Shell): Promise<void> {
   sh.status = 0
 }
 
+const escapeEntry = (s: string): string => s.replace(/\\/g, '\\\\').replace(/\n/g, '\\n')
+const unescapeEntry = (s: string): string => s.replace(/\\(\\|n)/g, (_m, c: string) => (c === 'n' ? '\n' : '\\'))
+
+/** `$HISTFILE` (default `~/.sh_history`) holds earlier sessions' commands, one per line. A shell without a home keeps none. */
+async function loadHistory(tiny: Pear, sh: Shell): Promise<string | null> {
+  const file = sh.get('HISTFILE') ?? (sh.get('HOME') ? `${sh.get('HOME')}/.sh_history` : null)
+  if (!file) return null
+  const max = Number(sh.get('HISTSIZE')) || 1000
+  try {
+    const lines = decoder.decode(await tiny.readFile(file)).split('\n').filter(Boolean)
+    sh.history.push(...lines.slice(-max).map(unescapeEntry))
+  } catch {
+    /* none yet */
+  }
+  return file
+}
+
+async function saveHistory(tiny: Pear, file: string | null, entry: string): Promise<void> {
+  if (!file || entry.startsWith(' ')) return
+  try {
+    const old = await tiny.readFile(file).catch(() => new Uint8Array())
+    const add = new TextEncoder().encode(`${escapeEntry(entry)}\n`)
+    const all = new Uint8Array(old.length + add.length)
+    all.set(old)
+    all.set(add, old.length)
+    await tiny.writeFile(file, all)
+  } catch {
+    /* an unwritable home keeps no history */
+  }
+}
+
 async function interactiveLoop(tiny: Pear, sh: Shell): Promise<number> {
-  const reader = new LineReader(tiny)
+  const plain = new LineReader(tiny)
+  const editor = new Readline(tiny, { history: () => sh.history, term: () => sh.get('TERM'), complete: (line, cursor) => complete(tiny, sh, line, cursor) })
+  let editing = true // false once the terminal refuses raw mode: lines then come from the line discipline
   await startupFiles(tiny, sh)
+  const histFile = await loadHistory(tiny, sh)
   let pending = ''
   const prompt = () => (pending ? (sh.vars.get('PS2') ?? '> ') : (sh.vars.get('PS1') ?? '$ '))
 
   // ^C at the prompt abandons the line; while a job runs the shell is not in the foreground group and never sees it.
   tiny.onSignal('SIGINT', async () => {
     pending = ''
+    editor.cancel()
     await tiny.stdout.write(`\n${prompt()}`)
   })
+  tiny.onSignal('SIGWINCH', () => editor.resize())
   tiny.onSignal('SIGHUP', async () => {
     await sh.hangUpJobs()
     await tiny.exit(129)
@@ -146,8 +184,16 @@ async function interactiveLoop(tiny: Pear, sh: Shell): Promise<number> {
   for (;;) {
     await sh.notifyJobs()
     const ps = prompt()
-    if (ps) await tiny.stdout.write(ps)
-    const line = await reader.next()
+    let line: string | null = null
+    if (editing) {
+      const r = await editor.next(ps)
+      if (r === undefined) editing = false
+      else line = r
+    }
+    if (!editing) {
+      if (ps) await tiny.stdout.write(ps)
+      line = await plain.next()
+    }
     if (line === null) {
       await tiny.stdout.write('exit\n')
       return sh.status
@@ -183,6 +229,7 @@ async function interactiveLoop(tiny: Pear, sh: Shell): Promise<number> {
     }
     pending = ''
     sh.history.push(text)
+    await saveHistory(tiny, histFile, text)
     try {
       await sh.run(text)
     } catch (e) {

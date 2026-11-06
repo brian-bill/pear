@@ -123,6 +123,25 @@ Document apps: handle both `tiny.app.args` at startup and `onOpenFile` later; a 
 
 `html\`...\``, `escapeHtml`, `dirname`, `basename`, `joinPath`, `formatBytes`, `textOf(bytes)`, `bytesOf(text)`, `SysError`.
 
+### A terminal in your app: `@tiny/terminal`
+
+The terminal in Terminal and in Code's panel is a module any app can bundle: [xterm.js](https://xtermjs.org) attached to a Vanilla pty with a shell on it (`desktop/sdk/terminal.ts`). The app needs `process.spawn` and `fs.user`, plus `clipboard` (copy and paste) and `notifications` (programs that ask to notify).
+
+```ts
+import { TerminalGroup, TerminalSession, loadPrefs } from '@tiny/terminal'
+await loadPrefs('org.example.app')                       // font size, cursor, scrollback... saved in this config domain
+const group = new TerminalGroup(
+  (cwd) => new TerminalSession({ cwd: cwd ?? '/Users/pear/Documents', prompt: 'docs % ', onTitle: () => {}, onExit: (st) => {} }),
+  () => {},                                              // panes changed
+  () => {},                                              // the last pane closed
+)
+parent.append(group.el)
+await group.start()
+await group.split('row')                                 // or 'col'
+```
+
+It handles 256 colours and truecolor, the alternate screen, mouse reporting, bracketed paste, Unicode 11, sixel and iTerm images, links (plain and OSC 8), find, scrollback, OSC 0/2 titles, OSC 7 working directory, OSC 9 / 777 notifications, OSC 52 clipboard writes, and the bell. Style the `.tm-session` element (`background`, `color`) to colour it; call `refreshThemes()` when those change. The programs see `TERM=xterm-256color`.
+
 ## Look and feel
 
 Desktop injects `sdk/base.css` and the theme (`--accent`, `--text`, `--text-dim`, `--window-bg`, `--window-titlebar`, `--separator`, `--font`, `--mono`, light/dark via `:root[data-theme]`). The window itself is the translucent background: leave `body` transparent. Base classes: `.toolbar`, `.sidebar` (+ `.item`, `h4`), `.layout`, `.content`, `.scroll`, `table.list`, `.segmented`, `button.primary|plain|icon|danger`, `.switch` (checkbox), `.dim`, `.row`, `.stack`, `.grow`, `.card`, `kbd`. Respect `prefers-reduced-motion` (`:root[data-reduce-motion=true]`). Every control reachable by keyboard; give interactive elements roles and labels.

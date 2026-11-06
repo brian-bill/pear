@@ -249,6 +249,13 @@ body { font: 13px/1.4 var(--vsc-font); color: var(--vsc-fg); }
 
 /* debug console */
 .badge.err { background: var(--vsc-error); }
+.terminalview { flex: 1; min-height: 0; position: relative; --terminal-bg: var(--vsc-bg); }
+.terminalview[hidden] { display: none; }
+.terminalview > .tm-group { position: absolute; inset: 0; width: auto; height: auto; }
+.terminalview > .tm-group[hidden] { display: none; }
+.terminalview .tm-session { background: var(--vsc-bg); color: var(--vsc-fg); font-family: var(--vsc-mono); padding-left: 20px; }
+.termactions { display: flex; align-items: center; gap: 2px; }
+.termactions[hidden] { display: none; }
 .consoleview { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .consolelog { flex: 1; min-height: 0; overflow: auto; font: 12px/18px var(--vsc-mono); user-select: text; }
 .crow { position: relative; display: flex; align-items: flex-start; gap: 6px; padding: 1px 20px 1px 8px; border-bottom: 1px solid color-mix(in srgb, var(--vsc-border) 50%, transparent); white-space: pre-wrap; overflow-wrap: anywhere; }

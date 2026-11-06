@@ -170,3 +170,45 @@ export function signalName(spec: string): string | null {
   const name = spec.toUpperCase().startsWith('SIG') ? spec.toUpperCase() : `SIG${spec.toUpperCase()}`
   return name in SIGNUM ? name : null
 }
+
+/** Everything in a file (or stdin for `-`). */
+export async function readAllBytes(tiny: Pear, path: string): Promise<Uint8Array> {
+  const parts: Uint8Array[] = []
+  await readInput(tiny, path, async (c) => void parts.push(c))
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0))
+  let at = 0
+  for (const p of parts) {
+    out.set(p, at)
+    at += p.length
+  }
+  return out
+}
+
+export const readAllText = async (tiny: Pear, path: string): Promise<string> => decoder.decode(await readAllBytes(tiny, path))
+
+/** Concatenated chunks. */
+export function concatBytes(parts: Uint8Array[]): Uint8Array {
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0))
+  let at = 0
+  for (const p of parts) {
+    out.set(p, at)
+    at += p.length
+  }
+  return out
+}
+
+/** `path` made absolute against the working directory. */
+export async function absolute(tiny: Pear, path: string): Promise<string> {
+  if (path.startsWith('/')) return path
+  const cwd = await tiny.getcwd()
+  return `${cwd === '/' ? '' : cwd}/${path}`
+}
+
+/** Walks `path`: calls `each(path, stat)` for it and everything below (directories first), unless `each` returns false for a directory. */
+export async function walk(tiny: Pear, path: string, each: (path: string, st: Awaited<ReturnType<Pear['lstat']>>, depth: number) => Promise<boolean | void>, depth = 0): Promise<void> {
+  const st = await tiny.lstat(path)
+  if ((await each(path, st, depth)) === false) return
+  if (st.kind !== 'dir') return
+  const names = (await tiny.readdir(path)).map((e) => e.name).sort()
+  for (const n of names) await walk(tiny, joinPath(path, n), each, depth + 1)
+}

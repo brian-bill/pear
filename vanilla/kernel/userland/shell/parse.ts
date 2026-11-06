@@ -1,9 +1,18 @@
 /// Shell syntax: text in, a syntax tree out. No I/O here, so it can be tested on its own.
+import { unescape } from './escapes'
 
 /** A piece of a word. `q` is true when it was quoted (no word splitting, no globbing). */
 export type Part =
   | { t: 'lit'; s: string; q: boolean }
-  | { t: 'var'; name: string; mod?: string; arg?: Word; q: boolean }
+  /**
+   * `${name[index]mod arg}`. `mod` is the operator (`:-`, `#`, `##`, `%`, `%%`, `/`, `//`, `/#`, `/%`, `^`, `^^`, `,`, `,,`, `:`, `:=`, `:?`,
+   * `len` for `${#x}`, `keys` for `${!x[@]}`, `indirect` for `${!x}`); `arg2` is the length of a `:off:len` slice or the replacement of `/pat/rep`.
+   */
+  | { t: 'var'; name: string; mod?: string; arg?: Word; arg2?: Word; index?: Word; q: boolean }
+  /** `name=(a b c)`: an array literal, only after an assignment. */
+  | { t: 'arr'; items: Word[]; q: boolean }
+  /** `<(cmd)`: the name of a file holding what `cmd` printed. */
+  | { t: 'psub'; src: string; q: boolean }
   | { t: 'cmd'; src: string; q: boolean }
   /** `word` is the expression with its own `$`-expansions still to do. */
   | { t: 'arith'; src: string; word: Word; q: boolean }
@@ -19,7 +28,7 @@ export interface Redir {
 
 /** A command: a simple one (words, assignments), or a compound one with optional redirections after it. */
 export interface Simple {
-  assigns: Array<{ name: string; value: Word }>
+  assigns: Array<{ name: string; value: Word; index?: Word; append?: boolean }>
   words: Word[]
   redirs: Redir[]
   compound?: Compound
@@ -30,6 +39,12 @@ export type Compound =
   | { k: 'while'; until: boolean; cond: Item[]; body: Item[] }
   /** `words: null` means `"$@"`. */
   | { k: 'for'; name: string; words: Word[] | null; body: Item[] }
+  /** `for ((init; cond; step))` */
+  | { k: 'cfor'; init: Word; cond: Word; step: Word; body: Item[] }
+  /** `((expr))` */
+  | { k: 'arith'; word: Word }
+  /** `[[ … ]]`: the words, with `&& || ( ) < >` as unquoted literals. */
+  | { k: 'cond'; words: Word[] }
   | { k: 'case'; word: Word; clauses: Array<{ patterns: Word[]; body: Item[] }> }
   | { k: 'group'; body: Item[] }
   | { k: 'subshell'; body: Item[] }
@@ -76,6 +91,8 @@ type Token =
   | { type: 'word'; word: Word; pos: number; end: number }
   | { type: 'op'; op: string; fd?: number; here?: HereDoc; pos: number; end: number }
   | { type: 'sep'; op: ';' | '&' | '\n' | ';;'; pos: number; end: number }
+  /** `((…))` where a command can start. */
+  | { type: 'dparen'; src: string; pos: number; end: number }
 
 export interface ParseOptions {
   /** Alias name -> text, replaced where a command starts. */
@@ -90,6 +107,9 @@ const SPECIAL_VARS = new Set(['?', '$', '!', '#', '@', '*', '0', '1', '2', '3', 
 class Lexer {
   i = 0
   private pendingHere: HereDoc[] = []
+  /** Inside `[[ … ]]`, and just after `=~`: the next word is a regular expression, parentheses and all. */
+  private inCond = false
+  private regexNext = false
   constructor(private src: string) {}
 
   tokens(): Token[] {
@@ -98,7 +118,21 @@ class Lexer {
     while (this.i < s.length) {
       const c = s[this.i]!
       const pos = this.i
-      if (c === ' ' || c === '\t') {
+      if (this.regexNext && c !== ' ' && c !== '\t' && c !== '\n') {
+        this.regexNext = false
+        let depth = 0
+        let j = this.i
+        for (; j < s.length; j++) {
+          const x = s[j]!
+          if (x === '\\') j++
+          else if (x === '(' || x === '[') depth++
+          else if (x === ')' || x === ']') depth--
+          else if (x === "'" || x === '"') j = s.indexOf(x, j + 1) < 0 ? s.length : s.indexOf(x, j + 1)
+          else if ((x === ' ' || x === '\t' || x === '\n') && depth <= 0) break
+        }
+        out.push({ type: 'word', word: new Lexer(s.slice(this.i, j)).word(true), pos, end: j })
+        this.i = j
+      } else if (c === ' ' || c === '\t') {
         this.i++
       } else if (c === '\\' && s[this.i + 1] === '\n') {
         this.i += 2 // line continuation
@@ -130,8 +164,14 @@ class Lexer {
           this.i++
           out.push({ type: 'sep', op: '&', pos, end: this.i })
         }
+      } else if (c === '<' && s[this.i + 1] === '(') {
+        // process substitution: a word whose value is a file name
+        const word = this.word()
+        out.push({ type: 'word', word, pos, end: this.i })
       } else if (c === '<' || c === '>') {
         out.push(this.redirect(undefined))
+      } else if (c === '(' && s[this.i + 1] === '(' && this.atCommandStart(out) && this.dparen(out, pos)) {
+        // handled
       } else if (c === '(' || c === ')') {
         this.i++
         out.push({ type: 'op', op: c, pos, end: this.i })
@@ -142,12 +182,43 @@ class Lexer {
         if ((next === '<' || next === '>') && word.length === 1 && word[0]!.t === 'lit' && !word[0]!.q && /^[0-2]$/.test(word[0]!.s)) {
           out.push(this.redirect(Number(word[0]!.s), pos))
         } else {
+          const text = word.length === 1 && word[0]!.t === 'lit' && !word[0]!.q ? word[0]!.s : null
+          if (text === '[[' && this.atCommandStart(out)) this.inCond = true
+          else if (text === ']]') this.inCond = false
+          else if (text === '=~' && this.inCond) this.regexNext = true
           out.push({ type: 'word', word, pos, end: this.i })
         }
       }
     }
     if (this.pendingHere.length) throw new ParseError(`here-document delimited by end of input (wanted '${this.pendingHere[0]!.delim}')`, true)
     return out
+  }
+
+  /** A command (or `for`) can start after the last token. */
+  private atCommandStart(out: Token[]): boolean {
+    const last = out[out.length - 1]
+    if (!last || last.type === 'sep') return true
+    if (last.type === 'op') return ['&&', '||', '|', '('].includes(last.op)
+    if (last.type === 'word' && last.word.length === 1 && last.word[0]!.t === 'lit' && !last.word[0]!.q) return ['then', 'do', 'else', 'elif', '{', 'for', 'if', 'while', 'until', '!'].includes(last.word[0]!.s)
+    return false
+  }
+
+  /** `((expr))`: true (and a token pushed) when the parentheses close together. */
+  private dparen(out: Token[], pos: number): boolean {
+    const s = this.src
+    let depth = 0
+    for (let j = this.i + 2; j < s.length; j++) {
+      if (s[j] === '(') depth++
+      else if (s[j] === ')') {
+        if (depth > 0) depth--
+        else if (s[j + 1] === ')') {
+          out.push({ type: 'dparen', src: s.slice(this.i + 2, j), pos, end: j + 2 })
+          this.i = j + 2
+          return true
+        } else return false
+      }
+    }
+    return false
   }
 
   /** At the start of the line after a `<<`: read each pending body up to its delimiter line. */
@@ -203,6 +274,9 @@ class Lexer {
     if (c === '>' && s[this.i] === '>') {
       op = '>>'
       this.i++
+    } else if (c === '<' && s[this.i] === '<' && s[this.i + 1] === '<') {
+      this.i += 2
+      op = '<<<'
     } else if (c === '<' && s[this.i] === '<') {
       this.i++
       const strip = s[this.i] === '-'
@@ -225,7 +299,7 @@ class Lexer {
     return { type: 'op', op, fd, pos: startPos, end: this.i }
   }
 
-  private word(): Word {
+  word(toEnd = false): Word {
     const s = this.src
     const parts: Word = []
     let lit = ''
@@ -233,7 +307,7 @@ class Lexer {
       if (lit) parts.push({ t: 'lit', s: lit, q })
       lit = ''
     }
-    while (this.i < s.length && !META.has(s[this.i]!)) {
+    while (this.i < s.length && (toEnd || !META.has(s[this.i]!) || this.metaOk(parts, lit))) {
       const c = s[this.i]!
       if (c === "'") {
         flush(false)
@@ -254,9 +328,52 @@ class Lexer {
           parts.push({ t: 'lit', s: s[this.i + 1]!, q: true })
           this.i += 2
         }
+      } else if (c === '$' && s[this.i + 1] === "'") {
+        // $'…': ANSI-C quoting
+        flush(false)
+        let j = this.i + 2
+        while (j < s.length && s[j] !== "'") j += s[j] === '\\' ? 2 : 1
+        if (j >= s.length) throw new ParseError('unterminated single quote', true)
+        parts.push({ t: 'lit', s: unescape(s.slice(this.i + 2, j)).text, q: true })
+        this.i = j + 1
       } else if (c === '$') {
         flush(false)
         this.dollar(parts, false)
+      } else if (c === '`') {
+        flush(false)
+        this.backtick(parts, false)
+      } else if (c === '<' && s[this.i + 1] === '(' && parts.length === 0 && lit === '') {
+        this.i += 2
+        const start = this.i
+        let depth = 1
+        while (this.i < s.length && depth > 0) {
+          if (s[this.i] === '(') depth++
+          else if (s[this.i] === ')') depth--
+          else if (s[this.i] === "'") this.i = s.indexOf("'", this.i + 1) < 0 ? s.length : s.indexOf("'", this.i + 1)
+          this.i++
+        }
+        if (depth > 0) throw new ParseError('unterminated <(', true)
+        parts.push({ t: 'psub', src: s.slice(start, this.i - 1), q: false })
+      } else if (c === '(' && /^[A-Za-z_][A-Za-z0-9_]*(\[[^\]]*\])?\+?=$/.test(lit) && parts.length === 0) {
+        // name=(a b c)
+        flush(false)
+        this.i++
+        const items: Word[] = []
+        for (;;) {
+          while (this.i < s.length && /[\s]/.test(s[this.i]!)) this.i++
+          if (this.i >= s.length) throw new ParseError('unterminated array', true)
+          if (s[this.i] === ')') {
+            this.i++
+            break
+          }
+          if (s[this.i] === '#') {
+            while (this.i < s.length && s[this.i] !== '\n') this.i++
+            continue
+          }
+          items.push(this.word())
+        }
+        parts.push({ t: 'arr', items, q: false })
+        return parts
       } else {
         lit += c
         this.i++
@@ -264,6 +381,29 @@ class Lexer {
     }
     flush(false)
     return parts
+  }
+
+  /** A metacharacter that still belongs to the word: `(` after `name=` and `<(` at its start. */
+  private metaOk(parts: Word, lit: string): boolean {
+    const c = this.src[this.i]
+    if (c === '(') return parts.length === 0 && /^[A-Za-z_][A-Za-z0-9_]*(\[[^\]]*\])?\+?=$/.test(lit)
+    return c === '<' && this.src[this.i + 1] === '(' && parts.length === 0 && lit === ''
+  }
+
+  /** `` `cmd` `` inside or outside double quotes. */
+  private backtick(parts: Word, q: boolean): void {
+    const s = this.src
+    let j = this.i + 1
+    let src = ''
+    while (j < s.length && s[j] !== '`') {
+      if (s[j] === '\\' && '`$\\'.includes(s[j + 1] ?? 'x')) {
+        src += s[j + 1]
+        j += 2
+      } else src += s[j++]
+    }
+    if (j >= s.length) throw new ParseError('unterminated `', true)
+    parts.push({ t: 'cmd', src, q })
+    this.i = j + 1
   }
 
   private doubleQuoted(parts: Word): void {
@@ -290,6 +430,9 @@ class Lexer {
       } else if (c === '$') {
         flush()
         this.dollar(parts, true)
+      } else if (c === '`') {
+        flush()
+        this.backtick(parts, true)
       } else {
         lit += c
         this.i++
@@ -363,19 +506,92 @@ class Lexer {
     throw new ParseError('unterminated ${', true)
   }
 
-  /** The inside of `${…}`: `name`, `name:-word`, `#name`, … */
-  private braced(inner: string, q: boolean): Part {
-    if (inner.startsWith('#') && inner.length > 1) return { t: 'var', name: inner.slice(1), mod: '#', q }
-    const m = /^([A-Za-z_][A-Za-z0-9_]*|[0-9?$!#@*])(:?[-+])?/.exec(inner)
-    if (!m) throw new ParseError(`bad substitution: \${${inner}}`)
-    if (!m[2]) {
-      if (m[0].length !== inner.length) throw new ParseError(`bad substitution: \${${inner}}`)
-      return { t: 'var', name: m[1]!, q }
+  /** Splits `text` at the first `sep` that is not escaped, quoted or inside a nested `${}`/`$()`. */
+  private splitTop(text: string, sep: string): [string, string | null] {
+    let depth = 0
+    for (let j = 0; j < text.length; j++) {
+      const c = text[j]!
+      if (c === '\\') j++
+      else if (c === "'") j = text.indexOf("'", j + 1) < 0 ? text.length : text.indexOf("'", j + 1)
+      else if (c === '"') {
+        j++
+        while (j < text.length && text[j] !== '"') j += text[j] === '\\' ? 2 : 1
+      } else if (c === '{' || c === '(') depth++
+      else if (c === '}' || c === ')') depth--
+      else if (c === sep && depth <= 0) return [text.slice(0, j), text.slice(j + 1)]
     }
-    const sub = new Lexer(inner.slice(m[0].length))
-    const arg = sub.word()
-    if (sub.i < sub.src.length) throw new ParseError(`bad substitution: \${${inner}}`)
-    return { t: 'var', name: m[1]!, mod: m[2], arg, q }
+    return [text, null]
+  }
+
+  private sub(text: string): Word {
+    const sub = new Lexer(text)
+    return sub.word(true)
+  }
+
+  /** The inside of `${…}`: `name`, `name:-word`, `#name`, `name[i]`, `name#pat`, `name/pat/rep`, `name:off:len`, `!name`… */
+  private braced(inner: string, q: boolean): Part {
+    const bad = (): never => {
+      throw new ParseError(`bad substitution: \${${inner}}`)
+    }
+    let at = 0
+    let prefix = ''
+    if ((inner[0] === '!' || inner[0] === '#') && inner.length > 1 && /^[!#][A-Za-z_0-9?$!@*]/.test(inner)) {
+      prefix = inner[0]!
+      at = 1
+    }
+    const m = /^([A-Za-z_][A-Za-z0-9_]*|[0-9]+|[?$!#@*-])/.exec(inner.slice(at))
+    if (!m) return bad()
+    const name = m[1]!
+    at += name.length
+    let index: Word | undefined
+    if (inner[at] === '[') {
+      let depth = 0
+      let j = at
+      for (; j < inner.length; j++) {
+        if (inner[j] === '[') depth++
+        else if (inner[j] === ']' && --depth === 0) break
+      }
+      if (j >= inner.length) return bad()
+      index = new Lexer(inner.slice(at + 1, j)).bodyWord()
+      at = j + 1
+    }
+    const rest = inner.slice(at)
+    const part = (mod?: string, arg?: Word, arg2?: Word): Part => ({ t: 'var', name, mod, arg, arg2, index, q })
+    if (prefix === '#') return rest === '' ? part('len') : bad()
+    if (prefix === '!') {
+      if (rest !== '') return bad()
+      const all = index && index.length === 1 && index[0]!.t === 'lit' && (index[0]!.s === '@' || index[0]!.s === '*')
+      return part(all ? 'keys' : 'indirect')
+    }
+    if (rest === '') return part()
+    const two = rest.slice(0, 2)
+    if ([':-', ':=', ':?', ':+'].includes(two)) return part(two, this.sub(rest.slice(2)))
+    const one = rest[0]!
+    if (['-', '=', '?', '+'].includes(one)) return part(one, this.sub(rest.slice(1)))
+    if (one === ':') {
+      const [off, len] = this.splitTop(rest.slice(1), ':')
+      return part(':', this.sub(off), len === null ? undefined : this.sub(len))
+    }
+    if (one === '#' || one === '%') {
+      const long = rest[1] === one
+      return part(long ? one + one : one, this.sub(rest.slice(long ? 2 : 1)))
+    }
+    if (one === '/') {
+      let kind = '/'
+      let body = rest.slice(1)
+      if (body[0] === '/' || body[0] === '#' || body[0] === '%') {
+        kind = `/${body[0]}`.replace('//', '//')
+        kind = body[0] === '/' ? '//' : kind
+        body = body.slice(1)
+      }
+      const [pat, rep] = this.splitTop(body, '/')
+      return part(kind, this.sub(pat), rep === null ? [] : this.sub(rep))
+    }
+    if (one === '^' || one === ',') {
+      const long = rest[1] === one
+      return part(long ? one + one : one, rest.length > (long ? 2 : 1) ? this.sub(rest.slice(long ? 2 : 1)) : undefined)
+    }
+    return bad()
   }
 }
 
@@ -393,14 +609,14 @@ export function parse(src: string, opts: ParseOptions = {}): Item[] {
   const peek = () => tokens[at]
   const isOp = (t: Token | undefined, ...ops: string[]): t is Extract<Token, { type: 'op' }> => t?.type === 'op' && ops.includes(t.op)
   const isSep = (t: Token | undefined, ...ops: string[]): t is Extract<Token, { type: 'sep' }> => t?.type === 'sep' && ops.includes(t.op)
-  const near = (t: Token) => `syntax error near '${t.type === 'word' ? (plain(t) ?? 'word') : t.op}'`
+  const near = (t: Token) => `syntax error near '${t.type === 'word' ? (plain(t) ?? 'word') : t.type === 'dparen' ? '((' : t.op}'`
   const skipNewlines = () => {
     while (isSep(peek(), '\n')) at++
   }
 
   const redirections = (cmd: Simple): boolean => {
     const t = peek()
-    if (!(t && t.type === 'op' && /^(<|>|>>|>&|<&|&>|&>>|<<)$/.test(t.op))) return false
+    if (!(t && t.type === 'op' && /^(<|>|>>|>&|<&|&>|&>>|<<|<<<)$/.test(t.op))) return false
     at++
     if (t.op === '<<') {
       const h = t.here!
@@ -411,6 +627,11 @@ export function parse(src: string, opts: ParseOptions = {}): Item[] {
     const target = peek()
     if (target?.type !== 'word') throw new ParseError(`syntax error: expected a file name after '${t.op}'`, target === undefined)
     at++
+    if (t.op === '<<<') {
+      // a here-string is a here-document of the word and a newline
+      cmd.redirs.push({ fd: t.fd ?? 0, op: '<<', target: [...target.word, { t: 'lit', s: '\n', q: true }] })
+      return true
+    }
     if (t.op === '&>' || t.op === '&>>') {
       cmd.redirs.push({ fd: 1, op: t.op === '&>' ? '>' : '>>', target: target.word })
       cmd.redirs.push({ fd: 2, op: '>&', target: [{ t: 'lit', s: '1', q: false }] })
@@ -420,6 +641,43 @@ export function parse(src: string, opts: ParseOptions = {}): Item[] {
     return true
   }
 
+  /** `name=value`, `name+=value`, `name[i]=value`, `name=(…)`: the parts, or null if the word is not an assignment. */
+  const splitAssign = (word: Word): Simple['assigns'][number] | null => {
+    const first = word[0]
+    if (first?.t !== 'lit' || first.q) return null
+    const m = /^[A-Za-z_][A-Za-z0-9_]*/.exec(first.s)
+    if (!m) return null
+    const name = m[0]
+    const rest = first.s.slice(name.length)
+    const lit = (x: string): Word => (x ? [{ t: 'lit', s: x, q: false }] : [])
+    if (rest[0] === '=' || rest.startsWith('+=')) {
+      const append = rest[0] === '+'
+      return { name, append, value: [...lit(rest.slice(append ? 2 : 1)), ...word.slice(1)] }
+    }
+    if (rest[0] !== '[') return null
+    const index: Word = []
+    let cur = rest.slice(1)
+    for (let k = 0; ; ) {
+      const p = cur.indexOf(']')
+      if (p >= 0) {
+        if (cur.slice(0, p)) index.push({ t: 'lit', s: cur.slice(0, p), q: false })
+        const after = cur.slice(p + 1)
+        const append = after.startsWith('+=')
+        if (!append && after[0] !== '=') return null
+        return { name, index, append, value: [...lit(after.slice(append ? 2 : 1)), ...word.slice(k + 1)] }
+      }
+      if (cur) index.push({ t: 'lit', s: cur, q: false })
+      k++
+      const nx = word[k]
+      if (!nx) return null
+      if (nx.t === 'lit' && !nx.q) cur = nx.s
+      else {
+        index.push(nx)
+        cur = ''
+      }
+    }
+  }
+
   const simple = (): Simple => {
     const cmd: Simple = { assigns: [], words: [], redirs: [] }
     for (;;) {
@@ -427,11 +685,9 @@ export function parse(src: string, opts: ParseOptions = {}): Item[] {
       const t = peek()
       if (t?.type !== 'word') break
       at++
-      const first = t.word[0]
-      const m = !cmd.words.length && first?.t === 'lit' && !first.q ? /^([A-Za-z_][A-Za-z0-9_]*)=([^]*)$/.exec(first.s) : null
-      if (m) {
-        const value: Word = [...(m[2] ? [{ t: 'lit' as const, s: m[2], q: false }] : []), ...t.word.slice(1)]
-        cmd.assigns.push({ name: m[1]!, value })
+      const asg = !cmd.words.length ? splitAssign(t.word) : null
+      if (asg) {
+        cmd.assigns.push(asg)
       } else {
         cmd.words.push(t.word)
       }
@@ -533,6 +789,18 @@ export function parse(src: string, opts: ParseOptions = {}): Item[] {
 
   const forClause = (): Compound => {
     at++
+    const first = peek()
+    if (first?.type === 'dparen') {
+      at++
+      const parts = first.src.split(';')
+      if (parts.length !== 3) throw new ParseError('syntax error: for (( … )) needs three parts')
+      while (isSep(peek(), '\n', ';')) at++
+      expectWord('do')
+      const body = list(['done'])
+      expectWord('done')
+      const w = (x: string) => new Lexer(x).bodyWord()
+      return { k: 'cfor', init: w(parts[0]!), cond: w(parts[1]!), step: w(parts[2]!), body }
+    }
     const nameTok = peek()
     const name = plain(nameTok)
     if (!nameTok) throw new ParseError('unexpected end of input', true)
@@ -617,6 +885,10 @@ export function parse(src: string, opts: ParseOptions = {}): Item[] {
     expandAlias()
     const t = peek()
     const kw = plain(t)
+    if (t?.type === 'dparen') {
+      at++
+      return compound({ k: 'arith', word: new Lexer(t.src).bodyWord() })
+    }
     if (isOp(t, '(')) {
       at++
       const body = list([')'])
@@ -639,6 +911,22 @@ export function parse(src: string, opts: ParseOptions = {}): Item[] {
           const body = list(['}'])
           expectWord('}')
           return compound({ k: 'group', body })
+        }
+        case '[[': {
+          at++
+          const words: Word[] = []
+          for (;;) {
+            const x = peek()
+            if (!x) throw new ParseError('unexpected end of input', true)
+            at++
+            if (x.type === 'word') {
+              if (plain(x) === ']]') break
+              words.push(x.word)
+            } else if (x.type === 'op' && ['&&', '||', '(', ')', '<', '>'].includes(x.op)) words.push([{ t: 'lit', s: x.op, q: false }])
+            else if (x.type === 'sep' && x.op === '\n') continue
+            else throw new ParseError(near(x))
+          }
+          return compound({ k: 'cond', words })
         }
         case 'function': {
           at++

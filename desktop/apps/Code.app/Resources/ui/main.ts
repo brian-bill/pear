@@ -8,6 +8,7 @@ import { fileIcon, icon, languageName, type IconName } from './icons'
 import { AUTO, THEMES, applyTheme, currentPalette, themeChoice } from './themes'
 import type { ExtActions, ExtHost, ExtensionDef, ToolbarButton } from './extension'
 import * as debugConsole from './debugconsole'
+import * as terminal from './terminal'
 import * as share from './share'
 import * as vsx from './vsxui'
 import * as palette from './palette'
@@ -64,6 +65,8 @@ const svgStage = $('svgStage')
 const svgEl = $('svgEl') as HTMLImageElement
 const sideTitle = $('sideTitle')
 const panelTabConsole = $('panelTabConsole')
+const panelTabTerminal = $('panelTabTerminal')
+const terminalView = $('terminalView')
 const consoleView = $('consoleView')
 const consoleFilter = $('consoleFilter') as HTMLSelectElement
 const sideError = $('sideError')
@@ -777,7 +780,11 @@ async function preloadProject(root: string): Promise<void> {
 }
 
 // ---- panel: Output and Problems
-function selectPanel(which: 'output' | 'problems' | 'console'): void {
+function selectPanel(which: 'output' | 'problems' | 'console' | 'terminal'): void {
+  panelTabTerminal.setAttribute('aria-selected', String(which === 'terminal'))
+  terminalView.hidden = which !== 'terminal'
+  $('termActions').hidden = which !== 'terminal'
+  terminal.shown(which === 'terminal')
   panelTabOutput.setAttribute('aria-selected', String(which === 'output'))
   panelTabProblems.setAttribute('aria-selected', String(which === 'problems'))
   panelTabConsole.setAttribute('aria-selected', String(which === 'console'))
@@ -786,11 +793,22 @@ function selectPanel(which: 'output' | 'problems' | 'console'): void {
   consoleView.hidden = which !== 'console'
   consoleFilter.hidden = which !== 'console'
   $('outclear').hidden = which === 'problems'
+  if (which === 'terminal') $('outclear').title = 'Clear Terminal'
   $('outclear').title = which === 'console' ? 'Clear Console (Ctrl+L)' : 'Clear Output'
   if (which === 'console') ($('consoleInput') as HTMLInputElement).focus()
   currentPanel = which
 }
-let currentPanel: 'output' | 'problems' | 'console' = 'output'
+let currentPanel: 'output' | 'problems' | 'console' | 'terminal' = 'output'
+
+function showTerminal(): void {
+  outputEl.hidden = false
+  selectPanel('terminal')
+}
+
+function toggleTerminal(): void {
+  if (!outputEl.hidden && currentPanel === 'terminal') outputEl.hidden = true
+  else showTerminal()
+}
 
 function showConsole(): void {
   outputEl.hidden = false
@@ -915,8 +933,28 @@ function autoSaveMenu(at: { x: number; y: number }): void {
 }
 
 // ---- projects
+/** The kernel tells us when anything under the project is created, removed or renamed (by the terminal, another app, an extension). */
+let stopWatching: (() => void) | null = null
+let treeTimer: ReturnType<typeof setTimeout> | undefined
+async function watchProject(root: string | null): Promise<void> {
+  stopWatching?.()
+  stopWatching = null
+  if (!root) return
+  const off = await tiny.watch(root, (events) => {
+    // the tree lists what is visible: changes inside dot-folders (.git...) and plain edits do not alter it
+    const shows = (p: string | null) => p !== null && !p.slice(root.length + 1).split('/').some((s) => s.startsWith('.'))
+    if (!events.some((e) => e.kind !== 'modified' && (shows(e.path) || shows(e.oldPath)))) return
+    clearTimeout(treeTimer)
+    treeTimer = setTimeout(() => void refreshTree().catch(() => {}), 30)
+  }).catch(() => null)
+  // the project may have changed while the watch was being set up
+  if (project !== root) off?.()
+  else stopWatching = off
+}
+
 async function openProject(path: string): Promise<void> {
   project = path.replace(/\/$/, '')
+  void watchProject(project)
   expanded = new Set(['Resources', 'Resources/ui'])
   selected = null
   open = []
@@ -946,6 +984,7 @@ async function openProject(path: string): Promise<void> {
 
 function closeProject(): void {
   project = null
+  void watchProject(null)
   open = []
   active = null
   selected = null
@@ -1057,6 +1096,7 @@ function setMenus(): void {
       items: [
         { label: 'Problems', shortcut: 'Cmd+Shift+M', action: showProblems },
         { label: 'Debug Console', shortcut: 'Cmd+Shift+Y', action: showConsole },
+        { label: 'Terminal', hint: hint('workbench.action.terminal.toggleTerminal'), action: toggleTerminal },
         { label: 'Toggle Preview', shortcut: 'Cmd+Shift+V', action: togglePreview },
         { label: 'Reload Preview', shortcut: 'Cmd+R', action: () => $('prevReload').click() },
         { label: 'Toggle Output', shortcut: 'Cmd+Y', action: () => (outputEl.hidden = !outputEl.hidden) },
@@ -1119,6 +1159,14 @@ function setMenus(): void {
   void tiny.window.setMenus(menus)
 }
 
+/** `code <path>`: a folder becomes the project; a file opens in the current project if it is inside it, else in its own folder. */
+async function openTarget(path: string): Promise<void> {
+  if (!(await tiny.exists(path))) return
+  if ((await tiny.stat(path)).kind === 'dir') return openProject(path)
+  if (!project || !path.startsWith(`${project}/`)) await openProject(path.slice(0, path.lastIndexOf('/')) || '/')
+  await openFile(path.slice(project!.length + 1))
+}
+
 async function openProjectDialog(): Promise<void> {
   const home = (await tiny.getenv('HOME')) || '/Users/pear'
   const picked = await tiny.dialogs.openFolder({ title: 'Open Project', startIn: `${home}/Projects` })
@@ -1153,6 +1201,7 @@ const hostDark = (): boolean => document.documentElement.dataset.theme === 'dark
 function applyChoice(id: string): void {
   syncTheme(applyTheme(id, hostDark()))
   if (id.startsWith('vsx:')) vsx.setExtensionTheme(id)
+  terminal.retheme()
 }
 
 function setTheme(id: string): void {
@@ -1188,7 +1237,7 @@ function keyContext(): Context {
   const a = document.activeElement as HTMLElement | null
   const inEditor = !!a?.closest('.monaco-editor')
   const input = !!a && !inEditor && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)
-  return { editorTextFocus: inEditor, inputFocus: inEditor || input, explorerViewletFocus: treeFocus, hasProject: !!project, sideBarVisible: !sideHidden, panelVisible: !outputEl.hidden, activeEditor: !!active, sideBar: sideView }
+  return { terminalFocus: !!a?.closest('.terminalview'), editorTextFocus: inEditor, inputFocus: inEditor || input, explorerViewletFocus: treeFocus, hasProject: !!project, sideBarVisible: !sideHidden, panelVisible: !outputEl.hidden, activeEditor: !!active, sideBar: sideView }
 }
 
 /** Run a command by id: the workbench's, then Monaco's (`editor.action.*`), then an extension's. */
@@ -1309,6 +1358,20 @@ function registerCommands(): void {
   })
   reg('workbench.actions.view.problems', 'View: Toggle Problems', showProblems)
   reg('workbench.debug.action.toggleRepl', 'Debug: Toggle Debug Console', showConsole)
+  reg('workbench.action.terminal.toggleTerminal', 'View: Toggle Terminal', toggleTerminal)
+  reg('workbench.action.terminal.new', 'Terminal: Create New Terminal', async () => {
+    const had = terminal.hasTerminals()
+    showTerminal() // starts the first terminal when there is none
+    if (had) await terminal.create()
+  })
+  reg('workbench.action.terminal.split', 'Terminal: Split Terminal', async () => {
+    showTerminal()
+    await terminal.split()
+  })
+  reg('workbench.action.terminal.kill', 'Terminal: Kill the Active Terminal', terminal.kill)
+  reg('workbench.action.terminal.clear', 'Terminal: Clear', terminal.clear)
+  reg('workbench.action.terminal.focusNext', 'Terminal: Focus Next Terminal Pane', () => terminal.cycle(1))
+  reg('workbench.action.terminal.focusPrevious', 'Terminal: Focus Previous Terminal Pane', () => terminal.cycle(-1))
   reg('workbench.view.explorer', 'View: Show Explorer', () => {
     if (sideHidden) toggleSidebar()
     setSide('files')
@@ -1363,6 +1426,8 @@ function initKeys(): void {
   const onKey = (e: KeyboardEvent, inEditor: boolean): void => {
     if (e.isComposing) return
     const chord = chordOf(e)
+    // Cmd+K in the terminal clears it (the terminal handles it); elsewhere it starts a chord
+    if (chord === 'cmd+k' && (e.target as HTMLElement | null)?.closest?.('.terminalview')) return
     // from the editor, the menus run first (the SDK listens before this one does): leave their keys alone
     if (inEditor && chord && menuKeys.has(chord)) return
     const hit = keymap.handle(e, keyContext())
@@ -1473,7 +1538,7 @@ void (async () => {
   saveBtn.addEventListener('click', () => void save())
   $('newfile').addEventListener('click', () => createIn(selected && entries.get(selected)?.kind === 'dir' ? selected : dirname(selected ?? ''), 'file'))
   $('outclose').addEventListener('click', () => (outputEl.hidden = true))
-  $('outclear').addEventListener('click', () => (currentPanel === 'console' ? debugConsole.clear() : outLog.replaceChildren()))
+  $('outclear').addEventListener('click', () => (currentPanel === 'console' ? debugConsole.clear() : currentPanel === 'terminal' ? terminal.clear() : outLog.replaceChildren()))
   debugConsole.mount({
     log: $('consoleLog'),
     input: $('consoleInput') as HTMLInputElement,
@@ -1485,6 +1550,11 @@ void (async () => {
     },
   })
   panelTabConsole.addEventListener('click', () => selectPanel('console'))
+  panelTabTerminal.addEventListener('click', () => selectPanel('terminal'))
+  void terminal.mount({ view: terminalView, list: $('termList') as HTMLSelectElement, project: () => project, hide: () => (outputEl.hidden = true) }, CONFIG)
+  $('termNew').addEventListener('click', () => void execute('workbench.action.terminal.new'))
+  $('termSplit').addEventListener('click', () => void execute('workbench.action.terminal.split'))
+  $('termKill').addEventListener('click', terminal.kill)
   $('newfolder').addEventListener('click', () => createIn(selected && entries.get(selected)?.kind === 'dir' ? selected : dirname(selected ?? ''), 'folder'))
   $('refreshTree').addEventListener('click', () => void refreshTree())
   $('collapseTree').addEventListener('click', () => {
@@ -1560,12 +1630,13 @@ void (async () => {
     ; (window as unknown as Record<string, unknown>).__main = true
   setMenus()
   // opened with a path (dragged onto the dock, say) or the last project
-  const argPath = tiny.app.args.find((a) => typeof a === 'string' && a.startsWith('/') && !a.endsWith('.vsix'))
+  const argPath = tiny.app.args.find((a): a is string => typeof a === 'string' && a.startsWith('/') && !a.endsWith('.vsix'))
   // a double-clicked .vsix is an install request, reviewed before anything is written
   for (const a of tiny.app.args) if (typeof a === 'string' && a.startsWith('/') && a.endsWith('.vsix')) void vsx.installVsixAt(a)
-  tiny.app.onOpenFile((path) => path.endsWith('.vsix') && void vsx.installVsixAt(path))
+  tiny.app.onOpenFile((path) => (path.endsWith('.vsix') ? void vsx.installVsixAt(path) : void openTarget(path)))
   const last = await tiny.configGet(CONFIG, 'lastProject', null)
   const restore = (tiny.app.state as { project?: string | null } | null)?.project
-  const target = argPath ?? restore ?? last
+  if (argPath && (await tiny.exists(argPath))) return void (await openTarget(argPath))
+  const target = restore ?? last
   if (target && typeof target === 'string' && (await tiny.exists(target))) await openProject(target)
 })()

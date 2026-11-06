@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { createRequire } from 'node:module'
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { build as esbuild, type Plugin as EsbuildPlugin } from 'esbuild'
@@ -111,12 +112,24 @@ const cssStub: EsbuildPlugin = {
   },
 }
 
+/** `import css from 'pkg/file.css?raw'` gives a stylesheet as a string, for a module that injects its own styles (the terminal). */
+const rawCss: EsbuildPlugin = {
+  name: 'tiny-raw-css',
+  setup(b) {
+    b.onResolve({ filter: /\.css\?raw$/ }, (args) => ({
+      path: createRequire(join(args.resolveDir, 'x.js')).resolve(args.path.replace(/\?raw$/, '')),
+      namespace: 'raw-css',
+    }))
+    b.onLoad({ filter: /.*/, namespace: 'raw-css' }, (args) => ({ contents: readFileSync(args.path, 'utf8'), loader: 'text' }))
+  },
+}
+
 function bundledApps(): Plugin {
   const compile = async (entry: string, format: 'iife' | 'esm', mini = false) => {
     const r = await esbuild({
       entryPoints: [entry], bundle: true, write: false, format, target: 'es2022', minify: mini, sourcemap: false, logLevel: 'silent',
-      alias: { '@tiny/sdk': join(SDK_DIR, 'client.ts') },
-      plugins: [cssStub],
+      alias: { '@tiny/sdk': join(SDK_DIR, 'client.ts'), '@tiny/terminal': join(SDK_DIR, 'terminal.ts') },
+      plugins: [rawCss, cssStub],
     })
     return r.outputFiles[0]!.text
   }

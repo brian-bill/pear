@@ -14,7 +14,9 @@
   "permissions": [
     "fs.user",
     "clipboard",
-    "network"
+    "network",
+    "process.spawn",
+    "notifications"
   ],
   "minify": true,
   "typeDefinitions": [

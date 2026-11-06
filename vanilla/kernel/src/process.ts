@@ -129,6 +129,8 @@ export type KernelEvent =
   /** A system service asks the page to do something with the hardware (`tiny.driverEmit`). */
   | { type: 'driver'; device: string; data: unknown }
   | { type: 'volume'; event: 'mounted' | 'unmounted'; point: string }
+  /** Files and folders were created, changed, removed or renamed, anywhere (pushed within milliseconds of the change). */
+  | { type: 'fs'; events: import('./fs').FsEvent[] }
   | { type: 'image'; event: 'progress'; op: 'create' | 'restore'; entries: number; bytes: number }
   | { type: 'image'; event: 'restored'; mode: 'replace' | 'merge'; restartRequired: boolean }
   /** A log entry, once `logSubscribe(true)` was called. */

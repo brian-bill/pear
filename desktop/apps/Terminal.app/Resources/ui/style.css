@@ -1,4 +1,16 @@
-html, body { background: var(--terminal-bg); }
-.terminal { height: 100%; margin: 0; padding: 6px 8px; background: var(--terminal-bg); color: var(--terminal-fg); font: 12px/1.35 var(--mono); overflow: auto; white-space: pre-wrap; word-break: break-all; outline: 0; cursor: text; user-select: text; }
-.terminal .cursor { background: var(--terminal-fg); color: var(--terminal-bg); }
-.terminal:not(:focus) .cursor { background: none; outline: 1px solid var(--terminal-fg); outline-offset: -1px; color: inherit; }
+html, body { height: 100%; margin: 0; background: var(--terminal-bg); }
+body { display: flex; flex-direction: column; }
+.stage { position: relative; flex: 1; min-height: 0; background: var(--terminal-bg); color: var(--terminal-fg); }
+.stage > .tm-group { position: absolute; inset: 0; width: auto; height: auto; }
+.stage > .tm-group[hidden] { display: none; }
+.tabs { flex: none; display: flex; align-items: stretch; gap: 1px; height: 28px; padding: 0 4px; background: var(--window-titlebar); border-bottom: 1px solid var(--separator); font: 12px var(--font); overflow-x: auto; }
+.tabs[hidden] { display: none; }
+.tab { flex: 1 1 0; min-width: 70px; max-width: 220px; display: flex; align-items: center; gap: 4px; padding: 0 6px 0 10px; margin: 3px 0; border-radius: 5px; color: var(--text-dim); cursor: default; user-select: none; }
+.tab:hover { background: color-mix(in srgb, var(--text) 8%, transparent); }
+.tab[aria-selected='true'] { background: color-mix(in srgb, var(--text) 14%, transparent); color: var(--text); }
+.tab .label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab .x { flex: none; width: 16px; height: 16px; padding: 0; line-height: 14px; border: 0; border-radius: 3px; background: none; color: inherit; cursor: pointer; opacity: 0; }
+.tab:hover .x, .tab[aria-selected='true'] .x { opacity: .7; }
+.tab .x:hover { opacity: 1; background: color-mix(in srgb, var(--text) 18%, transparent); }
+.newtab { flex: none; align-self: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 4px; background: none; color: var(--text-dim); font-size: 15px; line-height: 20px; cursor: pointer; }
+.newtab:hover { background: color-mix(in srgb, var(--text) 12%, transparent); color: var(--text); }

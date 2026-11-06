@@ -155,7 +155,7 @@ export class FileSystem {
     }
   }
 
-  private run<T>(body: () => T): Promise<T> {
+  private run<T>(body: () => T, quiet = false): Promise<T> {
     const [uid, gid] = this.actor
     const fn = () => {
       this.raw.setCreds(uid, gid)
@@ -173,6 +173,7 @@ export class FileSystem {
     })
     this.chain = next.catch(() => {})
     this.scheduleFlush()
+    if (!quiet) this.pushChanges()
     return next
   }
 
@@ -251,10 +252,25 @@ export class FileSystem {
   private changeSeq = 0
   private takeCursor = 0
   private async drainEngine(): Promise<void> {
-    const events = await this.run(() => this.raw.takeEvents() as FsEvent[])
+    const events = await this.run(() => this.raw.takeEvents() as FsEvent[], true)
     for (const m of this.mounts.values()) events.push(...m.takeEvents())
     for (const event of events) this.changes.push({ seq: ++this.changeSeq, event })
     if (this.changes.length > CHANGE_RING) this.changes.splice(0, this.changes.length - CHANGE_RING)
+  }
+  /**
+   * Set by the kernel: called with the new events shortly after the file system changed, so watchers learn of a file the
+   * moment it exists instead of polling. Calls are coalesced (a burst of writes is one call); unset, nothing is drained.
+   */
+  onChanges?: (events: FsEvent[]) => void
+  private pumpTimer: ReturnType<typeof setTimeout> | undefined
+  private pushChanges(): void {
+    if (!this.onChanges || this.pumpTimer) return
+    this.pumpTimer = setTimeout(async () => {
+      this.pumpTimer = undefined
+      const before = this.changeSeq
+      await this.drainEngine().catch(() => {})
+      if (this.changeSeq > before) this.onChanges?.(this.changes.filter((c) => c.seq > before).map((c) => c.event))
+    }, 15)
   }
   takeEvents = async (): Promise<FsEvent[]> => {
     await this.drainEngine()

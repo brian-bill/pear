@@ -1,7 +1,20 @@
-import { LineSplitter, eachInput, lineCountArgs, main, readInput, type Pear } from './lib'
+import { LineSplitter, eachInput, lineCountArgs, main, parseArgs, readInput, type Pear } from './lib'
 
 export default function (tiny: Pear): Promise<number> {
   return main('head', tiny, async () => {
+    const bytes = parseArgs(tiny.args, ['c', 'n'])
+    if (typeof bytes.flags.c === 'string') {
+      const limit = Number(bytes.flags.c)
+      return eachInput(tiny, 'head', bytes.rest.length ? bytes.rest : ['-'], async (path) => {
+        let left = limit
+        await readInput(tiny, path, async (chunk) => {
+          if (left <= 0) return false
+          await tiny.stdout.write(chunk.subarray(0, left))
+          left -= chunk.length
+          if (left <= 0) return false
+        })
+      })
+    }
     const args = await lineCountArgs(tiny, 'head')
     if (!args) return 1
     const { count, files } = args

@@ -51,6 +51,7 @@ export class Kernel {
 
   static async boot(opts: KernelBootOptions = {}, emit: (e: KernelEvent) => void, host: ProcessHost, storage?: ConfigStorage): Promise<Kernel> {
     const fs = await FileSystem.boot(opts)
+    fs.onChanges = (events) => emit({ type: 'fs', events })
     const procs = new ProcessTable(fs, emit, host, opts.processUrl ?? new URL('process.js', import.meta.url),
       opts.heartbeat === false ? null : (opts.heartbeat ?? { interval: 1000, timeout: 3000 }),
     )

@@ -2,6 +2,7 @@ import { tiny } from '@tiny/sdk'
 import { apps, appLabel, attempt, button, cfgList, cfgSet, choose, group, h, line, say, segmented, slider, toggle, type Pane } from '../lib'
 
 export const PRESETS: Array<[string, string, string]> = [
+  ['pear', 'Pear', 'url("/wallpapers/pear.jpeg")'],
   ['one-piece', 'One Piece', 'url("/wallpapers/one-piece-4k.jpg")'],
   ['aurora', 'Aurora', 'linear-gradient(135deg,#0f2027,#2c7a7b 50%,#6bd0a0)'],
   ['dusk', 'Dusk', 'linear-gradient(135deg,#2b1055,#7597de 70%,#f8b195)'],
@@ -21,7 +22,7 @@ export const desktop: Pane = {
     const [d, w, all] = await Promise.all([cfgList('tiny.desktop.dock'), cfgList('tiny.desktop.wallpaper'), apps()])
     const current: string | null = w.path
     // an unset path means the default wallpaper (see DEFAULT_WALLPAPER in desktop/src/shell/surface.ts)
-    const DEFAULT_WALLPAPER = 'builtin:one-piece'
+    const DEFAULT_WALLPAPER = 'builtin:pear'
 
     const walls = h('div', { class: 'walls', role: 'group', 'aria-label': 'Wallpaper' })
     const paint = (path: string | null) => walls.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.path === (path ?? DEFAULT_WALLPAPER))))

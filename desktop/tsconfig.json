@@ -20,6 +20,9 @@
     "paths": {
       "@tiny/sdk": [
         "./sdk/client.ts"
+      ],
+      "@tiny/terminal": [
+        "./sdk/terminal.ts"
       ]
     },
     "baseUrl": "."

@@ -1,6 +1,13 @@
 /// Word expansion: variables, command substitution, `~`, word splitting, and globbing.
 import { evalArith } from './arith'
 import type { Part, Word } from './parse'
+import { shellQuote } from './escapes'
+
+/** An array variable: indexed (keys are integers as text) or associative. */
+export interface ShellArray {
+  assoc: boolean
+  items: Map<string, string>
+}
 
 export interface ExpandContext {
   /** A variable, including `?`, `$`, `!`, `#`, `0`-`9`. `undefined` if unset. */
@@ -18,6 +25,12 @@ export interface ExpandContext {
   arith?(src: string): number
   /** `set -u`: an unset variable is an error. */
   nounset?(): boolean
+  /** The array called `name`, if there is one. */
+  array?(name: string): ShellArray | undefined
+  /** `${x:=word}` */
+  assign?(name: string, value: string): void
+  /** `<(cmd)`: run it and give back the name of a file holding its output. */
+  procSub?(src: string): Promise<string>
 }
 
 interface Field {
@@ -159,19 +172,21 @@ async function expandOne(word: Word, ctx: ExpandContext, opts: { split?: boolean
     } else if (part.t === 'arith') {
       const text = await expandString(part.word, ctx)
       insert(String(ctx.arith ? ctx.arith(text) : evalArith(text, ctx)), part.q)
-    } else if ((part.name === '@' || part.name === '*') && !part.mod) {
-      const args = ctx.positional()
-      if (part.q && part.name === '@') {
-        args.forEach((a, n) => {
+    } else if (part.t === 'arr') {
+      const parts: string[] = []
+      for (const item of part.items) parts.push(...(await expandWord(item, ctx)))
+      add(`(${parts.map(shellQuote).join(' ')})`, true)
+    } else if (part.t === 'psub') {
+      insert(ctx.procSub ? await ctx.procSub(part.src) : '', part.q)
+    } else {
+      const r = await resolve(part, ctx)
+      if (!r.multi) insert(r.list[0] ?? '', part.q)
+      else if (part.q && !r.star) {
+        r.list.forEach((a, n) => {
           if (n > 0) flush()
           add(a, true)
         })
-      } else {
-        insert(args.join(' '), part.q)
-      }
-    } else {
-      const value = await lookup(part, ctx)
-      insert(value, part.q)
+      } else insert(r.list.join(' '), part.q)
     }
   }
   flush()
@@ -197,24 +212,215 @@ export async function expandString(word: Word, ctx: ExpandContext): Promise<stri
   return (await expandWord(word, ctx, { split: false, glob: false })).join(' ')
 }
 
-async function lookup(part: Extract<Word[number], { t: 'var' }>, ctx: ExpandContext): Promise<string> {
-  const value = ctx.get(part.name)
-  if (value === undefined && !part.mod && ctx.nounset?.()) throw new Error(`${part.name}: unbound variable`)
+// ------------------------------------------------------------ parameters
+
+type VarPart = Extract<Part, { t: 'var' }>
+
+/** The values of an array in index order (numeric for indexed arrays, insertion order for associative ones). */
+export function arrayValues(a: ShellArray): string[] {
+  return arrayKeys(a).map((k) => a.items.get(k)!)
+}
+
+export function arrayKeys(a: ShellArray): string[] {
+  const keys = [...a.items.keys()]
+  return a.assoc ? keys : keys.sort((x, y) => Number(x) - Number(y))
+}
+
+const subscriptAll = (w: Word | undefined): '@' | '*' | null => (w && w.length === 1 && w[0]!.t === 'lit' && (w[0]!.s === '@' || w[0]!.s === '*') ? (w[0]!.s as '@' | '*') : null)
+
+const arith = (ctx: ExpandContext, text: string): number => (ctx.arith ? ctx.arith(text) : evalArith(text, ctx))
+
+/** The key of `name[index]` as stored. */
+async function keyOf(a: ShellArray | undefined, index: Word, ctx: ExpandContext): Promise<string> {
+  const text = await expandString(index, ctx)
+  if (a?.assoc) return text
+  let n = Math.trunc(arith(ctx, text))
+  if (n < 0 && a) n += Math.max(-1, ...[...a.items.keys()].map(Number)) + 1
+  return String(n)
+}
+
+/** A shell pattern (with `\\` escapes) as an unanchored-use regular expression for one candidate substring. */
+const matcher = (pat: string): ((s: string) => boolean) => {
+  const re = segmentToRegex(pat, true)
+  return (s) => re.test(s)
+}
+
+function trim(value: string, pat: string, side: '#' | '%', long: boolean): string {
+  const test = matcher(pat)
+  const n = value.length
+  if (side === '#') {
+    for (let k = long ? n : 0; long ? k >= 0 : k <= n; k += long ? -1 : 1) if (test(value.slice(0, k))) return value.slice(k)
+  } else {
+    for (let k = long ? 0 : n; long ? k <= n : k >= 0; k += long ? 1 : -1) if (test(value.slice(k))) return value.slice(0, k)
+  }
+  return value
+}
+
+function replace(value: string, pat: string, rep: string, kind: string): string {
+  if (pat === '') return value
+  const test = matcher(pat)
+  const n = value.length
+  if (kind === '/#') {
+    for (let e = n; e >= 0; e--) if (test(value.slice(0, e))) return rep + value.slice(e)
+    return value
+  }
+  if (kind === '/%') {
+    for (let b = 0; b <= n; b++) if (test(value.slice(b))) return value.slice(0, b) + rep
+    return value
+  }
+  let out = ''
+  let i = 0
+  while (i <= n) {
+    let hit = -1
+    for (let e = n; e > i; e--) {
+      if (test(value.slice(i, e))) {
+        hit = e
+        break
+      }
+    }
+    if (hit < 0) {
+      if (i < n) out += value[i]
+      i++
+    } else {
+      out += rep
+      i = hit
+      if (kind === '/') return out + value.slice(i)
+    }
+  }
+  return out
+}
+
+function recase(value: string, mod: string, pat: string | null): string {
+  const upper = mod[0] === '^'
+  const all = mod.length === 2
+  const test = pat === null ? () => true : matcher(pat)
+  let out = ''
+  let done = false
+  for (const ch of value) {
+    if ((all || !done) && test(ch)) {
+      out += upper ? ch.toUpperCase() : ch.toLowerCase()
+      done = true
+    } else {
+      out += ch
+      done = true
+    }
+  }
+  return out
+}
+
+/** Evaluates a `${…}` to a list: one entry for a scalar, the elements for `$@`, `$*`, `${a[@]}`, `${!a[@]}`. */
+async function resolve(part: VarPart, ctx: ExpandContext): Promise<{ list: string[]; multi: boolean; star: boolean }> {
+  const all = subscriptAll(part.index)
+  let name = part.name
+  if (part.mod === 'indirect') {
+    name = ctx.get(name) ?? ''
+    const m = /^([A-Za-z_][A-Za-z0-9_]*)\[(.*)\]$/.exec(name)
+    if (m) return resolve({ t: 'var', name: m[1]!, index: [{ t: 'lit', s: m[2]!, q: false }], q: part.q }, ctx)
+  }
+  const arr = ctx.array?.(name)
+  let list: string[]
+  let multi = false
+  let star = false
+  if (name === '@' || name === '*') {
+    list = ctx.positional()
+    multi = true
+    star = name === '*'
+  } else if (all) {
+    multi = true
+    star = all === '*'
+    list = part.mod === 'keys' ? (arr ? arrayKeys(arr) : ctx.get(name) !== undefined ? ['0'] : []) : arr ? arrayValues(arr) : ctx.get(name) !== undefined ? [ctx.get(name)!] : []
+  } else if (part.index) {
+    const key = await keyOf(arr, part.index, ctx)
+    const v = arr ? arr.items.get(key) : key === '0' ? ctx.get(name) : undefined
+    list = v === undefined ? [] : [v]
+  } else {
+    const v = ctx.get(name)
+    if (v === undefined && !part.mod && ctx.nounset?.()) throw new Error(`${name}: unbound variable`)
+    list = v === undefined ? [] : [v]
+  }
+  const set = list.length > 0
+  const value = list[0]
+  const one = (f: (v: string) => string) => ({ list: multi ? list.map(f) : [f(value ?? '')], multi, star })
+  const word = async (w: Word | undefined) => expandString(w ?? [], ctx)
+  const pattern = async (w: Word | undefined) => expandPattern(w ?? [], ctx)
+
   switch (part.mod) {
     case undefined:
-      return value ?? ''
-    case '#':
-      return String((value ?? '').length)
+    case 'indirect':
+    case 'keys':
+      return { list: multi ? list : [value ?? ''], multi, star }
+    case 'len':
+      return { list: [String(multi ? list.length : (value ?? '').length)], multi: false, star: false }
     case ':-':
-      return value ? value : await expandString(part.arg ?? [], ctx)
+      return multi ? (list.length && list.join('') !== '' ? { list, multi, star } : { list: [await word(part.arg)], multi: false, star }) : { list: [value ? value : await word(part.arg)], multi: false, star }
     case '-':
-      return value !== undefined ? value : await expandString(part.arg ?? [], ctx)
+      return set ? { list, multi, star } : { list: [await word(part.arg)], multi: false, star }
     case ':+':
-      return value ? await expandString(part.arg ?? [], ctx) : ''
+      return { list: [value ? await word(part.arg) : ''], multi: false, star }
     case '+':
-      return value !== undefined ? await expandString(part.arg ?? [], ctx) : ''
+      return { list: [set ? await word(part.arg) : ''], multi: false, star }
+    case ':=':
+    case '=': {
+      if (part.mod === ':=' ? value : set) return { list: multi ? list : [value ?? ''], multi, star }
+      const w = await word(part.arg)
+      ctx.assign?.(name, w)
+      return { list: [w], multi: false, star }
+    }
+    case ':?':
+    case '?': {
+      if (part.mod === '?' ? set : value) return { list: multi ? list : [value ?? ''], multi, star }
+      const msg = await word(part.arg)
+      throw new Error(`${name}: ${msg || 'parameter null or not set'}`)
+    }
+    case '#':
+    case '##':
+    case '%':
+    case '%%': {
+      const pat = await pattern(part.arg)
+      return one((v) => trim(v, pat, part.mod![0] as '#' | '%', part.mod!.length === 2))
+    }
+    case '/':
+    case '//':
+    case '/#':
+    case '/%': {
+      const pat = await pattern(part.arg)
+      const rep = await word(part.arg2)
+      return one((v) => replace(v, pat, rep, part.mod!))
+    }
+    case '^':
+    case '^^':
+    case ',':
+    case ',,': {
+      const pat = part.arg ? await pattern(part.arg) : null
+      return one((v) => recase(v, part.mod!, pat))
+    }
+    case ':': {
+      const off = Math.trunc(arith(ctx, await word(part.arg)))
+      const lenText = part.arg2 ? await word(part.arg2) : null
+      let len = lenText === null ? undefined : Math.trunc(arith(ctx, lenText))
+      const slice = <T>(items: T[], start: number): T[] => {
+        let b = off < 0 ? Math.max(0, items.length + off) : off - start
+        if (b < 0) b = 0
+        let e = items.length
+        if (len !== undefined) e = len < 0 ? items.length + len : b + len
+        return items.slice(b, Math.max(b, e))
+      }
+      if (multi) {
+        if (name === '@' || name === '*') {
+          // positional parameters count from 1; offset 0 includes $0
+          const items = off === 0 ? [ctx.get('0') ?? '', ...list] : list
+          return { list: slice(items, off === 0 ? 0 : 1), multi, star }
+        }
+        return { list: slice(list, 0), multi, star }
+      }
+      const v = value ?? ''
+      const b = off < 0 ? Math.max(0, v.length + off) : Math.min(off, v.length)
+      const e = len === undefined ? v.length : len < 0 ? v.length + len : b + len
+      len = undefined
+      return { list: [v.slice(b, Math.max(b, e))], multi: false, star }
+    }
   }
-  return value ?? ''
+  return { list: multi ? list : [value ?? ''], multi, star }
 }
 
 // ------------------------------------------------------------------- globbing

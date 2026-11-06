@@ -199,6 +199,14 @@ addEventListener('keydown', (e) => {
   }
 })
 
+/** A change to the file system, as `tiny.watch` reports it. */
+export interface FsChange {
+  kind: 'created' | 'modified' | 'deleted' | 'renamed'
+  path: string
+  /** For `renamed`, where it was. */
+  oldPath: string | null
+}
+
 const on = (name: string, fn: Handler): (() => void) => {
   const set = handlers.get(name) ?? new Set()
   set.add(fn)
@@ -409,6 +417,29 @@ const extras = {
   system,
   service,
   on,
+  /**
+   * Hear about changes to a file or folder and everything inside it, the moment they happen, whoever makes them (this app,
+   * another app, a terminal). Resolves once watching; the result stops it. `fn` gets batches of events.
+   */
+  async watch(path: string, fn: (events: FsChange[]) => void): Promise<() => void> {
+    const off = on('fs', (data) => {
+      const hit = (data as FsChange[]).filter((e) => e.path === path || e.path.startsWith(path === '/' ? '/' : `${path}/`) || (e.oldPath !== null && (e.oldPath === path || e.oldPath.startsWith(`${path}/`))))
+      if (hit.length) fn(hit)
+    })
+    try {
+      await call<void>('fs.watch', path)
+    } catch (e) {
+      off()
+      throw e
+    }
+    let stopped = false
+    return () => {
+      if (stopped) return
+      stopped = true
+      off()
+      void call<void>('fs.unwatch', path).catch(() => {})
+    }
+  },
   /** The current theme. Also arrives as a `theme` event. */
   get theme(): ThemeInfo { return initMsg.theme },
   get locale(): string { return initMsg.locale },
@@ -431,6 +462,7 @@ export const tiny = new Proxy({} as Calls, {
   net: typeof net
   service: typeof service
   on: typeof on
+  watch: (path: string, fn: (events: FsChange[]) => void) => Promise<() => void>
   theme: ThemeInfo
   locale: string
   platform: string
