@@ -69,7 +69,7 @@ export class StatusBar {
             this.battery = this.menubar.addStatus('battery', '', () => this.infoPanel('Battery', [`${Math.round(b.level * 100)}%`, b.charging ? 'Charging' : 'On battery power']))
             this.battery.setAttribute('aria-label', 'Battery')
           }
-          this.battery.textContent = `${Math.round(b.level * 100)}%${b.charging ? ' ⚡' : ''}`
+          this.battery.textContent = `${Math.round(b.level * 100)}%`
         }
         show()
         b.addEventListener('levelchange', show)
