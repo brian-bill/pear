@@ -14,9 +14,11 @@ import * as vsx from './vsxui'
 import * as palette from './palette'
 import { DEFAULT_KEYS, chordOf, createKeymap, display, isMac, parseKey, type Context, type Keymap } from './keys'
 import { parseJsonc } from './vsx'
+import { consoleManifest, devError, sameCommands, stateLine } from './devproject'
 import type { MenuDef } from '@tiny/sdk'
 import { KIND_LABEL, defaultKind, jsonToggleAll, render as renderPreview, type PreviewKind } from './previews'
 import { previewExtension, togglePreview } from './preview'
+import { pickNewProject, folderName } from './newproject'
 import { TEMPLATES, instantiate, type TemplateDef } from './templates'
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
@@ -152,8 +154,179 @@ function activateExtensions(): void {
   renderToolbar()
 }
 
+/** What the open project is, when it is a console project (a `tool` or `service` bundle). */
+let consoleEntry: string | null = null
+let consoleKind: 'tool' | 'service' | null = null
+let consoleCommands: string[] = []
+/** The commands the project's link last registered (null: not linked, or not known yet). */
+let linkedCommands: string[] | null = null
+let serviceState: ServiceInfo | null = null
+
+const dev = (): typeof tiny.dev => tiny.dev
+type ServiceInfo = { id: string; name: string; state: string; pid: number | null; restarts: number; reason: string | null; project: string | null }
+
+async function readConsoleEntry(): Promise<void> {
+  consoleEntry = null
+  consoleKind = null
+  consoleCommands = []
+  const bytes = await extHost.readProjectFile('manifest.json')
+  if (!bytes || !project) return
+  try {
+    const m = consoleManifest(parseJsonc(textOf(bytes)))
+    if (!m) return
+    consoleKind = m.kind
+    consoleEntry = joinPath(project, m.entry)
+    consoleCommands = m.commands
+  } catch {
+    // an unreadable manifest is the editor's problem, not the toolbar's
+  }
+}
+
+/** Is this project linked now? Refreshes `linkedCommands` from the kernel. */
+async function refreshLink(): Promise<void> {
+  linkedCommands = null
+  if (!project || !consoleCommands.length) return
+  try {
+    const links = await dev().kernel<{ path: string; commands: string[]; broken: boolean }[]>('commandLinks')
+    const mine = links.find((l) => l.path === project && !l.broken)
+    linkedCommands = mine ? mine.commands : null
+  } catch {
+    linkedCommands = null
+  }
+}
+
+/** Link the project's commands into the shell's PATH. Says which were linked, or why not. */
+async function linkCommands(quiet = false): Promise<boolean> {
+  if (!project || !consoleCommands.length) return false
+  try {
+    const info = await dev().kernel<{ commands: string[] }>('commandLink', project)
+    linkedCommands = info.commands
+    if (!quiet) status(`Linked ${info.commands.join(', ')}`)
+    extHost.log(`Linked commands: ${info.commands.join(', ')}`)
+    return true
+  } catch (e) {
+    const reason = devError(e)
+    status(`Link failed: ${reason}`)
+    extHost.log(`Link failed: ${reason}`, 'err')
+    if (!quiet) void tiny.dialogs.alert({ title: 'Link Commands', message: reason })
+    return false
+  } finally {
+    renderToolbar()
+    setMenus()
+  }
+}
+
+async function unlinkCommands(): Promise<void> {
+  if (!project) return
+  try {
+    await dev().kernel('commandUnlink', project)
+    const was = linkedCommands
+    linkedCommands = null
+    status(was?.length ? `Unlinked ${was.join(', ')}` : 'Unlinked')
+  } catch (e) {
+    status(`Unlink failed: ${devError(e)}`)
+  }
+  renderToolbar()
+  setMenus()
+}
+
+/** Run the project's first command by name once it is linked; the full path only when linking fails. */
+async function runInTerminal(): Promise<void> {
+  if (!consoleEntry || !project) return
+  await refreshLink()
+  let line: string | null = null
+  if (consoleCommands.length && (linkedCommands || (await linkCommands(true)))) line = consoleCommands[0]!
+  line ??= `'${consoleEntry.replace(/'/g, `'\\''`)}'`
+  showTerminal()
+  void terminal.run(line)
+}
+
+/** The saved manifest's commands changed: keep the link, if there is one, in step. */
+async function relinkAfterManifestSave(before: string[]): Promise<void> {
+  if (!project || sameCommands(before, consoleCommands)) return
+  await refreshLink()
+  if (consoleCommands.length === 0) {
+    if (before.length) await unlinkCommands()
+    return
+  }
+  if (before.length === 0 && !linkedCommands) return // newly declared: the user links when ready
+  if (await linkCommands(true)) status(`Re-linked ${consoleCommands.join(', ')}`)
+}
+
+// ---- a service project
+async function findService(): Promise<ServiceInfo | null> {
+  if (!project) return null
+  const all = await dev().kernel<ServiceInfo[]>('serviceList')
+  serviceState = all.find((s) => s.project === project) ?? null
+  return serviceState
+}
+
+function reportService(s: ServiceInfo | null): void {
+  if (!s) return status('Service not running')
+  const line = stateLine(s)
+  status(line)
+  extHost.log(line, s.state === 'failed' ? 'err' : undefined)
+}
+
+async function serviceAction(what: 'start' | 'stop' | 'restart'): Promise<void> {
+  if (!project || consoleKind !== 'service') return
+  try {
+    if (what === 'start') await dev().kernel('serviceStart', project)
+    else {
+      const s = await findService()
+      if (!s) return status('Service is not running')
+      await dev().kernel(what === 'stop' ? 'serviceStop' : 'serviceRestart', s.id)
+    }
+    await new Promise((r) => setTimeout(r, 300)) // let the first state settle
+    reportService(await findService())
+  } catch (e) {
+    const reason = devError(e)
+    status(`Service ${what} failed: ${reason}`)
+    extHost.log(`Service ${what} failed: ${reason}`, 'err')
+    extHost.showOutput()
+  }
+  renderToolbar()
+  setMenus()
+}
+
+async function showServiceLogs(): Promise<void> {
+  const s = await findService().catch(() => null)
+  extHost.showOutput()
+  if (!s) return extHost.log('No service is running for this project. Use Start Service.')
+  extHost.log(`--- ${stateLine(s)}`)
+  try {
+    const lines = await dev().kernel<{ time: number; stream: string; message: string }[]>('serviceLogs', s.id)
+    if (!lines.length) extHost.log('(no output yet)')
+    for (const l of lines) extHost.log(`${new Date(l.time).toLocaleTimeString()} ${l.message}`, l.stream === 'stderr' ? 'err' : undefined)
+  } catch (e) {
+    extHost.log(`Could not read logs: ${devError(e)}`, 'err')
+  }
+}
+
 function renderToolbar(): void {
   extButtons.replaceChildren()
+  if (project && consoleEntry) {
+    const add = (ic: IconName, title: string, run: () => void, primary = false): void => {
+      const el = document.createElement('button')
+      el.className = primary ? 'action primary' : 'action'
+      el.innerHTML = icon(ic)
+      el.title = title
+      el.setAttribute('aria-label', title)
+      el.addEventListener('click', run)
+      extButtons.append(el)
+    }
+    add('output', 'Run in Terminal', () => void runInTerminal(), true)
+    if (consoleCommands.length) {
+      if (linkedCommands) add('close', 'Unlink Commands', () => void unlinkCommands())
+      else add('add', 'Link Commands', () => void linkCommands())
+    }
+    if (consoleKind === 'service') {
+      add('play', 'Start Service', () => void serviceAction('start'))
+      add('refresh', 'Restart Service', () => void serviceAction('restart'))
+      add('error', 'Stop Service', () => void serviceAction('stop'))
+      add('info', 'Show Service Logs', () => void showServiceLogs())
+    }
+  }
   for (const ext of extensions) {
     for (const button of actions.get(ext.id)?.toolbar ?? []) {
       if (!button.visible()) continue
@@ -878,6 +1051,11 @@ function saveFile(path: string, quiet = false): Promise<void> {
       renderTabs()
       updateEdited()
       for (const a of actions.values()) a.onDidSaveProject?.(path)
+      if (path === 'manifest.json') {
+        const before = consoleCommands
+        await readConsoleEntry()
+        await relinkAfterManifestSave(before)
+      }
       renderToolbar()
     } catch (e) {
       status(`Save failed: ${(e as Error).message}`)
@@ -972,6 +1150,8 @@ async function openProject(path: string): Promise<void> {
   const asMain = await extHost.readProjectFile('src/main.ts')
   setAssemblyScriptProject(!!asMain && looksLikeAssemblyScript(textOf(asMain)))
   await refreshTree()
+  await readConsoleEntry()
+  await refreshLink()
   void preloadProject(project)
   activateExtensions()
   for (const a of actions.values()) await a.onDidOpenProject?.()
@@ -984,6 +1164,11 @@ async function openProject(path: string): Promise<void> {
 
 function closeProject(): void {
   project = null
+  consoleEntry = null
+  consoleKind = null
+  consoleCommands = []
+  linkedCommands = null
+  serviceState = null
   void watchProject(null)
   open = []
   active = null
@@ -1008,23 +1193,13 @@ function closeProject(): void {
   void vsx.projectChanged().then(setMenus)
 }
 
-async function newProject(at: { x: number; y: number }): Promise<void> {
-  const name = await tiny.dialogs.prompt('Name the new project', { value: 'Demo', placeholder: 'MyApp' })
-  if (!name) return
-  const choice = await new Promise<TemplateDef | null>((resolve) => {
-    void tiny.shell.contextMenu(
-      TEMPLATES.map((t) => ({
-        label: t.label,
-        action: () => resolve(t),
-      })),
-      at,
-    )
-    // cancelled
-    setTimeout(() => resolve(null), 60_000)
-  })
-  if (!choice) return
+async function newProject(_at?: { x: number; y: number }): Promise<void> {
   const home = (await tiny.getenv('HOME')) || '/Users/pear'
-  const root = `${home}/Projects/${name.replace(/[^\w.-]+/g, '') || 'App'}.app`
+  const picked = await pickNewProject(TEMPLATES, `${home}/Projects`, () => {})
+  if (!picked) return
+  const { template: choice, name } = picked
+  // a plain folder name: no extension, so Finder opens it as a folder rather than a bundle or document
+  const root = `${home}/Projects/${folderName(name)}`
   try {
     if (await tiny.exists(root)) {
       if (!(await tiny.dialogs.confirm(`${root} already exists. Open it?`))) return
@@ -1041,8 +1216,11 @@ async function newProject(at: { x: number; y: number }): Promise<void> {
     return
   }
   await openProject(root)
-  await openFile('Resources/ui/main.js')
-  if (choice.id === 'wasm') await openFile('src/main.ts')
+  if (choice.id === 'console') await openFile('main.js')
+  else {
+    await openFile('Resources/ui/main.js')
+    await openFile('src/main.ts')
+  }
 }
 
 // ---- menus and shortcuts
@@ -1054,6 +1232,23 @@ function scheduleMenus(): void {
     menuTimer = null
     setMenus()
   }, 50)
+}
+
+/** File-menu items for a console project: commands and service. */
+function runMenuItems(): MenuDef['items'] {
+  const items: MenuDef['items'] = [{ separator: true }, { label: 'Run in Terminal', action: () => void runInTerminal() }]
+  if (consoleCommands.length) {
+    items.push({ label: 'Link Commands', action: () => void linkCommands() }, { label: 'Unlink Commands', action: () => void unlinkCommands(), disabled: !linkedCommands })
+  }
+  if (consoleKind === 'service') {
+    items.push(
+      { label: 'Start Service', action: () => void serviceAction('start') },
+      { label: 'Stop Service', action: () => void serviceAction('stop') },
+      { label: 'Restart Service', action: () => void serviceAction('restart') },
+      { label: 'Show Service Logs', action: () => void showServiceLogs() },
+    )
+  }
+  return items
 }
 
 function setMenus(): void {
@@ -1074,6 +1269,7 @@ function setMenus(): void {
         ...(['afterDelay', 'onFocusChange', 'off'] as AutoSave[]).map((m) => ({ label: `Auto Save: ${AUTO_SAVE_LABEL[m]}`, checked: autoSave === m, action: () => setAutoSave(m) })),
         { separator: true },
         { label: 'Close Project', action: closeProject, disabled: !project },
+        ...(consoleEntry ? runMenuItems() : []),
         { separator: true },
         { label: 'Close Editor', shortcut: 'Cmd+W', action: () => void execute('workbench.action.closeActiveEditor') },
         { label: 'Close Window', shortcut: 'Cmd+Shift+W', action: () => void execute('workbench.action.closeWindow') },
@@ -1413,6 +1609,13 @@ function registerCommands(): void {
   reg('extensions.update', 'Extensions: Update Extensions', vsx.updateAll)
   reg('workbench.trust.manage', 'Workspace: Trust This Workspace', vsx.trustWorkspace)
   reg('workbench.trust.restrict', 'Workspace: Use Restricted Mode', vsx.restrictWorkspace)
+  reg('console.linkCommands', 'Run: Link Commands', () => void linkCommands())
+  reg('console.unlinkCommands', 'Run: Unlink Commands', () => void unlinkCommands())
+  reg('console.runInTerminal', 'Run: Run in Terminal', () => void runInTerminal())
+  reg('console.serviceStart', 'Run: Start Service', () => void serviceAction('start'))
+  reg('console.serviceStop', 'Run: Stop Service', () => void serviceAction('stop'))
+  reg('console.serviceRestart', 'Run: Restart Service', () => void serviceAction('restart'))
+  reg('console.serviceLogs', 'Run: Show Service Logs', () => void showServiceLogs())
   reg('share.packageAndInstall', 'Share: Package & Install', () => project && share.packageAndInstall(project))
   reg('share.checkProject', 'Share: Check Project…', () => project && share.checkProject(project))
 }

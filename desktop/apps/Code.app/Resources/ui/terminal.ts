@@ -113,6 +113,12 @@ export const split = (): Promise<void> | undefined => current?.group.split('row'
 export const kill = (): void => {
   if (current) remove(current)
 }
+/** Type a command line into the active terminal (starting one first if needed) and run it. */
+export async function run(line: string): Promise<void> {
+  if (!current) await create()
+  current?.group.active.send(line + '\r')
+  current?.group.active.focus()
+}
 export const clear = (): void => current?.group.active.clear()
 export const focus = (): void => current?.group.active.focus()
 export const cycle = (by: 1 | -1): void => current?.group.cycle(by)

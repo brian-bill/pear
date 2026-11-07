@@ -14,11 +14,21 @@ interface Manifest {
   kind?: string
   provides?: { name?: string; framework?: string; version?: string; api?: string; abi?: string[]; commands?: string[]; shebangs?: string[]; handles?: Array<{ ext: string[]; uti?: string }> }
   requires?: Array<{ runtime?: string; framework?: string; range: string }>
+  commands?: Array<{ name: string; summary?: string }>
+  autostart?: boolean
+  service?: { name: string; restart: string; restartDelayMs?: number; maxRestarts?: number }
 }
 interface Unmet { kind: 'runtime' | 'framework'; name: string; range: string; reason: string }
 interface InstalledRuntime { bundleId: string; name: string; commands: string[] }
 /** What the review needs to know about the rest of the system. */
-interface Context { unmet: Unmet[]; clashes: Array<{ command: string; holder: string }> }
+interface Context {
+  unmet: Unmet[]
+  clashes: Array<{ command: string; holder: string }>
+  /** Commands of a bundle that another bundle or a runtime already holds (the person may take them over after the install). */
+  taken: Array<{ name: string; holder: string }>
+  /** Commands that would hide a program of the same name further along PATH. */
+  shadows: Array<{ name: string; from: string }>
+}
 interface Archive {
   ok: boolean
   error?: string
@@ -109,7 +119,34 @@ async function contextFor(m: Manifest): Promise<Context> {
       return holder ? [{ command, holder: holder.name }] : []
     })
   }
-  return { unmet, clashes }
+  let taken: Context['taken'] = []
+  let shadows: Context['shadows'] = []
+  if (m.commands?.length) {
+    taken = (await kernel<Array<{ name: string; holder: string }>>('commandConflictsFor', m).catch(() => [])).map((c) => ({ name: c.name, holder: c.holder }))
+    const held = new Set(taken.map((c) => c.name))
+    for (const c of m.commands) {
+      if (held.has(c.name)) continue
+      const lower = await kernel<{ bundleName: string; bundleId: string } | null>('commandResolve', c.name).catch(() => null)
+      if (lower && lower.bundleId !== m.id) shadows.push({ name: c.name, from: lower.bundleName })
+    }
+  }
+  return { unmet, clashes, taken, shadows }
+}
+
+const RESTART: Record<string, string> = { never: 'never restarts', 'on-failure': 'restarts if it fails', always: 'restarts whenever it stops' }
+
+function commandsCard(m: Manifest, ctx: Context, takeOver: HTMLInputElement | null): Node[] {
+  const cmds = m.commands ?? []
+  return [
+    cmds.length ? el('div', { class: 'card', id: 'commands-card' }, el('h2', null, 'Commands it adds'),
+      el('ul', null, ...cmds.map((c) => el('li', null, c.name, c.summary ? ` — ${c.summary}` : ''))),
+      ctx.shadows.length ? el('p', { class: 'note', id: 'commands-shadow' }, `Also provided further along the command path: ${ctx.shadows.map((s) => `“${s.name}” (${s.from})`).join(', ')}. This app's version comes first.`) : null) : null,
+    ctx.taken.length ? el('div', { class: 'card', id: 'commands-conflicts' }, el('h2', null, 'Commands already taken'),
+      el('ul', null, ...ctx.taken.map((c) => el('li', { class: 'error' }, `“${c.name}” belongs to ${c.holder}. It keeps the command unless you take it over.`))),
+      takeOver ? el('label', null, takeOver, ' Take over conflicting commands') : null) : null,
+    m.service ? el('div', { class: 'card', id: 'service-card' }, el('h2', null, 'Runs in the background'),
+      el('p', { class: 'note' }, `Service ${m.service.name}: ${m.autostart ? 'starts when Pear starts' : 'does not start by itself'}, ${RESTART[m.service.restart] ?? m.service.restart}.`)) : null,
+  ].filter(Boolean) as Node[]
 }
 
 function runtimeCard(m: Manifest, ctx: Context): Node[] {
@@ -131,7 +168,7 @@ function runtimeCard(m: Manifest, ctx: Context): Node[] {
   ].filter(Boolean) as Node[]
 }
 
-function review(r: Review, ctx: Context = { unmet: [], clashes: [] }): void {
+function review(r: Review, ctx: Context = { unmet: [], clashes: [], taken: [], shadows: [] }): void {
   const m = r.manifest
   const isRuntime = m.kind === 'runtime'
   const isFramework = m.kind === 'framework'
@@ -143,6 +180,7 @@ function review(r: Review, ctx: Context = { unmet: [], clashes: [] }): void {
     ...(m.urlSchemes ?? []).map((s) => [`Open ${s}: links`, false] as [string, boolean]),
   ]
   const go = el('button', { class: 'primary', id: 'go' }, update ? (downgrade ? 'Replace with Older Version' : 'Update') : 'Install')
+  const takeOver = ctx.taken.length ? el('input', { type: 'checkbox', id: 'take-over' }) : null
   const cancel = el('button', { onclick: () => tiny.window.close() }, 'Cancel')
   go.addEventListener('click', async () => {
     go.setAttribute('disabled', '')
@@ -150,7 +188,13 @@ function review(r: Review, ctx: Context = { unmet: [], clashes: [] }): void {
     busy(`${update ? 'Updating' : 'Installing'} ${m.name}…`)
     try {
       const app = await r.install(update)
-      done(app.id, app.name, update, m.kind)
+      let note: string | null = null
+      if (takeOver?.checked) {
+        const failed: string[] = []
+        for (const c of ctx.taken) await kernel('commandTakeOver', c.name, m.id).catch(() => void failed.push(c.name))
+        if (failed.length) note = `Could not take over: ${failed.join(', ')}.`
+      }
+      done(app.id, app.name, update, m.kind, note)
     } catch (e) {
       const err = e as { code?: string; message?: string }
       problem(`${m.name} was not installed`, `${err.message ?? 'Something went wrong.'}${err.code ? ` (${err.code})` : ''}`)
@@ -176,6 +220,7 @@ function review(r: Review, ctx: Context = { unmet: [], clashes: [] }): void {
     ctx.unmet.length ? el('div', { class: 'card', id: 'unmet' }, el('h2', null, 'Needs something that is not installed'),
       el('ul', null, ...ctx.unmet.map((u) => el('li', { class: 'error' }, `${u.kind === 'runtime' ? 'Runtime' : 'Framework'} ${u.name} ${u.range}: ${u.reason}`))),
       el('p', { class: 'note' }, 'Install it first, then this app will run. You can still install this one now.')) : null,
+    ...commandsCard(m, ctx, takeOver),
     isRuntime ? null : el('div', { class: 'card' }, el('h2', null, isFramework ? 'It can' : 'This app can'),
       reach.length ? el('ul', null, ...reach.map(([text, severe]) => el('li', severe ? { class: 'error' } : null, text))) : el('p', { class: 'note' }, 'Ask for no special access.')),
     isRuntime ? null : el('p', { class: 'note' }, 'It runs inside Pear’s sandbox and asks again for anything it needs later. Only install apps from people you trust.'),
@@ -185,12 +230,13 @@ function review(r: Review, ctx: Context = { unmet: [], clashes: [] }): void {
   go.focus()
 }
 
-function done(id: string, name: string, updated: boolean, kind = 'app'): void {
-  const openable = !['runtime', 'framework'].includes(kind)
+function done(id: string, name: string, updated: boolean, kind = 'app', note: string | null = null): void {
+  const openable = !['runtime', 'framework', 'tool', 'service'].includes(kind)
   show(
     el('div', { class: 'center' }, el('div', { class: 'tile', style: 'margin:0 auto 12px' }, '✓'),
       el('h1', null, `${name} was ${updated ? 'updated' : 'installed'}`),
-      el('p', { class: 'note' }, openable ? 'You can find it in the Launchpad.' : kind === 'runtime' ? 'Its commands are ready. See it in Settings > Runtimes.' : 'Apps and runtimes that need it can use it now.'),
+      note ? el('p', { class: 'error', role: 'alert' }, note) : null,
+      el('p', { class: 'note' }, openable ? 'You can find it in the Launchpad.' : kind === 'runtime' ? 'Its commands are ready. See it in Settings > Runtimes.' : kind === 'tool' || kind === 'service' ? 'Its commands are ready to run in the Terminal.' : 'Apps and runtimes that need it can use it now.'),
       el('div', { class: 'actions', style: 'justify-content:center' },
         el('button', { onclick: () => tiny.window.close() }, 'Done'),
         openable ? el('button', { class: 'primary', id: 'open', onclick: () => void tiny.shell.openApp(id).then(() => tiny.window.close()) }, 'Open') : null)),

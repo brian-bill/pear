@@ -3,6 +3,8 @@
 import type { ExitStatus, ProcessInfo, Signal, SpawnOptions } from './process'
 import type { FileSystem, FsEvent, FsMethod } from './fs'
 import { request, type Message, type SendOptions } from './ipc'
+import { rewriteImports } from './modules'
+import { makeNet } from './net'
 import type { WireError } from './errors'
 import type { BundleInfo } from './bundle'
 import type { ConfigScope, ConfigValue } from './config'
@@ -104,7 +106,31 @@ export interface Pear extends FsApi {
   permRequest(capability: string, opts?: ActingFor): Promise<Status>
   permList(opts?: ActingFor): Promise<Grant[]>
 
+  /** HTTP(S) through the network service (needs the `network` permission). Also a global named `net`. `fetch` resolves to a standard `Response`. */
+  net: import('./net').PearNetApi
   bundleList(): Promise<BundleInfo[]>
+  /** Console apps. Commands registered by installed bundles and development links, with their owners. */
+  commandList(): Promise<import('./commands').CommandInfo[]>
+  commandResolve(name: string): Promise<import('./commands').CommandInfo | null>
+  /** Get `{type: 'command', event, ...}` on `port` (one you own) when commands are registered, unregistered or taken over. */
+  commandSubscribe(port: number): Promise<null>
+  commandConflicts(): Promise<import('./commands').CommandConflict[]>
+  commandLinks(): Promise<import('./commands').LinkInfo[]>
+  /** The user's acts, refused to apps: link a project's commands for development, drop the link, take a name over. */
+  commandLink(project: string): Promise<import('./commands').LinkInfo>
+  commandUnlink(project: string): Promise<null>
+  commandTakeOver(name: string, bundleId: string): Promise<null>
+  /** Services. Any process may list and subscribe; managing needs the `service.manage` capability or being the owning bundle. */
+  serviceList(): Promise<import('./services').ServiceInfo[]>
+  /** Get `{type: 'service', event: 'state', id, state, pid, reason}` on `port` (one you own). */
+  serviceSubscribe(port: number): Promise<null>
+  /** `idOrPath` is a bundle id, or a project folder (a development service for this session). */
+  serviceStart(idOrPath: string): Promise<number>
+  serviceStop(id: string): Promise<null>
+  serviceRestart(id: string): Promise<number>
+  serviceEnable(id: string): Promise<null>
+  serviceDisable(id: string): Promise<null>
+  serviceLogs(id: string, opts?: { since?: number; limit?: number }): Promise<import('./services').LogLine[]>
   /** Installed language runtimes. */
   runtimeList(): Promise<import('./runtimes').RuntimeInfo[]>
   runtimeInfo(name: string, range?: string): Promise<import('./runtimes').RuntimeInfo | null>
@@ -195,6 +221,8 @@ interface Init {
   env: Record<string, string>
   cwd: string
   source: Uint8Array
+  /** Files the program imports by relative path (see modules.ts). */
+  modules?: import('./modules').ModuleGraph
   port: MessagePort
   /** Which of stdin, stdout, stderr are terminals. */
   tty: boolean[]
@@ -208,6 +236,8 @@ const SYSTEM_CALLS = [
   'configGet', 'configSet', 'configDelete', 'configList', 'configReset', 'configWatch', 'configUnwatch',
   'permCheck', 'permRequest', 'permList', 'bundleList', 'bundleInfo', 'bundlePackage', 'bundleCheck', 'cryptoDigest', 'cryptoVerify',
   'runtimeList', 'runtimeInfo', 'runtimeResolve', 'runtimeEmbed', 'runtimeUnmet', 'frameworkList', 'frameworkResolve',
+  'commandList', 'commandResolve', 'commandSubscribe', 'commandLink', 'commandUnlink', 'commandLinks', 'commandTakeOver', 'commandConflicts',
+  'serviceList', 'serviceSubscribe', 'serviceStart', 'serviceStop', 'serviceRestart', 'serviceEnable', 'serviceDisable', 'serviceLogs',
   'launchOpen', 'launchOpenWith', 'launchApps', 'launchAppsFor', 'launchDefaultFor', 'launchSetDefault',
   'launchTypeOf', 'launchRunning', 'launchActivate', 'launchRecents', 'launchIconFor', 'launchTypeConflicts',
 ] as const
@@ -383,16 +413,37 @@ async function run(init: Init): Promise<void> {
   } as unknown as Record<string, unknown>
   tiny.request = (p: number, d: unknown, o?: { timeout?: number; rights?: number[]; transfer?: Transferable[] }) => request(tiny as never, p, d, o)
   for (const name of [...FS_CALLS, ...SYSTEM_CALLS]) tiny[name] = (...args: unknown[]) => call(name, ...args)
+  // Networking, as in a window: `tiny.net`, and `net` on its own.
+  tiny.net = makeNet(tiny as never)
+  ;(globalThis as { net?: unknown }).net = tiny.net
 
   port.postMessage({ type: 'ready' })
 
   try {
-    const url = URL.createObjectURL(new Blob([init.source as BlobPart], { type: 'text/javascript' }))
+    // Each imported file gets its own module URL, built from the leaves up; they are kept until the program has loaded.
+    const made: string[] = []
+    const blob = (text: string): string => {
+      const u = URL.createObjectURL(new Blob([text], { type: 'text/javascript' }))
+      made.push(u)
+      return u
+    }
+    const graph = init.modules
+    const built = new Map<string, string>()
+    const urlOf = (path: string): string => {
+      let u = built.get(path)
+      if (!u) {
+        const f = graph!.files[path]!
+        u = blob(rewriteImports(f.text, (spec) => urlOf(f.deps[spec]!)))
+        built.set(path, u)
+      }
+      return u
+    }
+    const url = graph ? blob(rewriteImports(new TextDecoder().decode(init.source), (spec) => urlOf(graph.deps[spec]!))) : blob(new TextDecoder().decode(init.source))
     let mod: { default?: unknown }
     try {
       mod = await import(/* @vite-ignore */ url)
     } finally {
-      URL.revokeObjectURL(url)
+      for (const u of made) URL.revokeObjectURL(u)
     }
     if (typeof mod.default !== 'function') throw new Error('program must export a default function')
     const result = await (mod.default as (t: Pear) => unknown)(tiny as unknown as Pear)

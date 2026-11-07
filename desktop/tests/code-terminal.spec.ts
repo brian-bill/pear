@@ -10,10 +10,11 @@ const launch = (d: Desktop): Promise<void> => d.page.evaluate(() => void window.
 
 async function newProject(d: Desktop, name: string): Promise<void> {
   await ui(d).locator('#newproj').click()
-  await sheet(d).locator('input').fill(name)
-  await sheet(d).getByRole('button', { name: 'OK' }).click()
-  await d.page.getByRole('menuitem', { name: 'Web App', exact: true }).click()
-  await expect(ui(d).locator('#project')).toHaveText(`${name}.app`)
+  await ui(d).getByRole('radio', { name: new RegExp('Web App') }).click()
+  await ui(d).locator('.modal').getByRole('button', { name: 'Next' }).click()
+  await ui(d).locator('.modal-input').fill(name)
+  await ui(d).locator('.modal').getByRole('button', { name: 'Create' }).click()
+  await expect(ui(d).locator('#project')).toHaveText(`${name}`)
 }
 
 test('the integrated terminal opens in the project folder and runs the shell', async ({ desktop }) => {
@@ -24,7 +25,7 @@ test('the integrated terminal opens in the project folder and runs the shell', a
   // Ctrl+` opens the Terminal tab in the panel, with a shell running in the project
   await page.keyboard.press('Control+Backquote')
   await expect(ui(desktop).locator('#panelTabTerminal')).toHaveAttribute('aria-selected', 'true')
-  await expect(row(desktop, /Demo\.app %/)).not.toHaveCount(0)
+  await expect(row(desktop, /Demo %/)).not.toHaveCount(0)
   await page.keyboard.type('ls')
   await page.keyboard.press('Enter')
   await expect(row(desktop, /manifest\.json/)).not.toHaveCount(0)
@@ -51,7 +52,7 @@ test('several terminals: new, split, switch, kill', async ({ desktop }) => {
   await launch(desktop)
   await newProject(desktop, 'Many')
   await page.keyboard.press('Control+Backquote')
-  await expect(row(desktop, /Many\.app %/)).not.toHaveCount(0)
+  await expect(row(desktop, /Many %/)).not.toHaveCount(0)
   const shells = () => page.evaluate(() => window.tiny!.kernel.listProcesses().then((l) => l.filter((p) => p.name === 'sh' && p.state === 'running').length))
   await expect.poll(shells).toBe(1)
   await expect(ui(desktop).locator('#termList')).toBeHidden() // one terminal: nothing to choose from

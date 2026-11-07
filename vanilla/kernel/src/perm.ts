@@ -7,7 +7,7 @@ import type { Credentials, UserDb } from './users'
 
 export const CAPABILITIES = [
   'fs.container', 'fs.user', 'fs.picker', 'fs.all',
-  'clipboard', 'notifications', 'audio.input', 'video.input', 'network', 'location', 'process.spawn', 'display.capture', 'loopback',
+  'clipboard', 'notifications', 'audio.input', 'video.input', 'network', 'location', 'process.spawn', 'display.capture', 'loopback', 'service.manage',
 ] as const
 export type Capability = (typeof CAPABILITIES)[number]
 export type Status = 'granted' | 'denied' | 'prompt'

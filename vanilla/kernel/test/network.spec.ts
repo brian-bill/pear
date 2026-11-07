@@ -194,3 +194,17 @@ test('websockets deliver messages and close to the owner\'s port', async ({ page
   expect(out.gone).toEqual({ error: 'ENOENT' })
   expect(out.refused).toMatchObject({ error: expect.stringMatching(/EACCES|ENETUNREACH/) })
 })
+
+test('a program gets net (and tiny.net): fetch resolves to a Response, errors carry a code', async ({ page }) => {
+  const out = await page.evaluate(async () => {
+    const program = `export default async (tiny) => {
+      const ok = await net.fetch('https://api.test/hello', { headers: { 'x-token': 'abc' } })
+      const missing = await tiny.net.fetch('https://api.test/missing')
+      const bad = await net.fetch('file:///etc/passwd').then(() => 'ok', (e) => e.code)
+      await tiny.writeFile('/tmp/org.test.netapp.out', new TextEncoder().encode(JSON.stringify({ same: net === tiny.net, status: ok.status, echo: ok.headers.get('x-echo'), text: await ok.text(), missing: [missing.status, missing.ok, await missing.text()], bad, online: (await net.status()).online })))
+    }`
+    await window.runApp('org.test.netapp', program, { permissions: ['network'] }, true)
+    return JSON.parse(await window.sh.cat('/tmp/org.test.netapp.out'))
+  })
+  expect(out).toEqual({ same: true, status: 200, echo: 'abc', text: 'GET /hello', missing: [404, false, 'gone'], bad: 'EINVAL', online: true })
+})

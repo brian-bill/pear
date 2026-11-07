@@ -23,6 +23,21 @@ async function folderSize(path: string, budget = { n: 20000 }): Promise<{ bytes:
   return { bytes, items }
 }
 
+interface BundleRow { id: string; path: string; commands: Array<{ name: string; summary?: string }>; service?: { name: string; restart: string }; autostart?: boolean }
+
+/** The commands a bundle adds (and its service), as a section of Get Info; empty for anything else. */
+async function commandsSection(path: string): Promise<string> {
+  try {
+    const b = (await tiny.admin.kernel<BundleRow[]>('bundleList')).find((x) => x.path === path)
+    if (!b || (!b.commands?.length && !b.service)) return ''
+    const rows = (b.commands ?? []).map((c) => `<dt>${escapeHtml(c.name)}</dt><dd>${escapeHtml(c.summary ?? '')}</dd>`).join('')
+    const svc = b.service ? `<dt>Service</dt><dd>${escapeHtml(b.service.name)} · ${b.autostart ? 'starts at boot' : 'manual start'} · restart ${escapeHtml(b.service.restart)}</dd>` : ''
+    return `<section aria-label="Commands"><h3>Commands</h3><dl>${rows}${svc}</dl></section>`
+  } catch {
+    return ''
+  }
+}
+
 const BITS = [
   ['Owner', 6],
   ['Group', 3],
@@ -51,6 +66,7 @@ export async function mountInfo(initial: string): Promise<void> {
     const type = await tiny.launchTypeOf(path).catch(() => null)
     const tags = await readTags(path)
     void tiny.window.setTitle(`${name} Info`)
+    const commands = s.kind === 'dir' ? await commandsSection(path) : ''
     const perm = BITS.map(([label, shift]) => `<tr><th scope="row">${label}</th>${PERMS.map(([p, bit]) => `<td><label><input type="checkbox" data-shift="${shift}" data-bit="${bit}" aria-label="${label} ${p}" ${(s.mode >> shift) & bit ? 'checked' : ''}> ${p}</label></td>`).join('')}</tr>`).join('')
     root.innerHTML = `
       <header class="ihead"><img class="thumb big" alt=""><div class="grow"><input id="i-name" type="text" value="${escapeHtml(name)}" aria-label="Name" spellcheck="false"><div class="dim" id="i-sub">${escapeHtml(type?.description ?? '')}</div></div></header>
@@ -63,6 +79,7 @@ export async function mountInfo(initial: string): Promise<void> {
       </dl></section>
       <section aria-label="Tags"><h3>Tags</h3><div class="chips">${TAG_COLORS.map((t) => `<button class="chip" data-tag="${t}" aria-pressed="${tags.includes(t)}" aria-label="${cap(t)}"><i style="background:${TAG_HEX[t]}"></i>${cap(t)}</button>`).join('')}</div>
         <input id="i-tags" type="text" value="${escapeHtml(tags.join(', '))}" placeholder="Add tags, separated by commas" aria-label="Tags"></section>
+      ${commands}
       ${isDir || isApp ? '' : '<section aria-label="Open with"><h3>Open with</h3><select id="i-open" aria-label="Open with"></select></section>'}
       <section aria-label="Sharing and permissions"><h3>Sharing &amp; Permissions</h3>
         <dl><dt>Owner</dt><dd>${who(USERS, s.uid)}</dd><dt>Group</dt><dd>${who(GROUPS, s.gid)}</dd><dt>Mode</dt><dd id="i-mode">${(s.mode & 0o777).toString(8).padStart(3, '0')}</dd></dl>

@@ -17,6 +17,9 @@ import { ROOT_CREDS, type Credentials } from './users'
 import { Packager } from './pearapp'
 import { OS_VERSION } from './bundle'
 import { SHIM_MARK, type RuntimeInfo, type RuntimeRegistry } from './runtimes'
+import { collectImports, hasRelativeImports, type ModuleGraph } from './modules'
+import { COMMAND_MARK, parseShim, type CommandEvent, type CommandRegistry } from './commands'
+import type { ServiceEvent, ServiceManager } from './services'
 import { sha256Hex, verifySignature } from './sources'
 
 const SIGNAL_NAMES = ['SIGHUP', 'SIGINT', 'SIGTERM', 'SIGKILL', 'SIGUSR1', 'SIGUSR2', 'SIGPIPE', 'SIGWINCH', 'SIGTSTP'] as const
@@ -122,6 +125,8 @@ export type KernelEvent =
   | { type: 'process'; event: 'exited'; pid: number; status: ExitStatus }
   | { type: 'process'; event: 'stateChanged'; pid: number; unresponsive: boolean }
   | BundleEvent
+  | CommandEvent
+  | ServiceEvent
   | LaunchEvent
   | PermissionEvent
   | { type: 'config'; event: 'changed'; change: ConfigChange }
@@ -219,6 +224,8 @@ export interface SystemContext {
   bundles: BundleManager
   launch: LaunchServices
   runtimes: RuntimeRegistry
+  commands: CommandRegistry
+  services: ServiceManager
 }
 
 const decoder = new TextDecoder()
@@ -271,7 +278,7 @@ export class ProcessTable {
       if (!user || !this.system) throw new SysError('ESRCH', `no such user ${String(opts.user)}`)
       creds = { ...this.system.users.credentials(user), appId: parentProc?.appId ?? null }
     }
-    const bundle = opts.bundle ? { id: opts.bundle.id, kind: opts.bundle.kind } : parentProc ? { id: parentProc.bundleId, kind: parentProc.kind } : { id: null, kind: null }
+    const bundle: { id: string | null; kind: BundleKind | null } = opts.bundle ? { id: opts.bundle.id, kind: opts.bundle.kind } : parentProc ? { id: parentProc.bundleId, kind: parentProc.kind } : { id: null, kind: null }
     if (opts.bundle) {
       if (opts.bundle.trusted) creds = { ...ROOT_CREDS, appId: null }
       else creds = { ...creds, appId: opts.bundle.id }
@@ -290,8 +297,23 @@ export class ProcessTable {
     let source = await this.fs.readFile(full) // ENOENT / EISDIR come from the engine
     let args = opts.args ?? []
     let loaderEnv: Record<string, string> = {}
+    let modules: ModuleGraph | undefined
     const hop = await this.resolveProgram(full, source, args, opts)
     if (hop) ({ source, args, env: loaderEnv } = hop)
+    // A Pear program that imports files next to it (`./utils/url.js`) gets them inlined from inside its bundle or folder.
+    if ((!hop || hop.entry) && hasRelativeImports(source)) {
+      const file = hop?.entry ?? full
+      const root = hop?.root ?? this.system?.bundles.owning(full)?.path ?? file.slice(0, file.lastIndexOf('/')) ?? '/'
+      modules = await collectImports(this.fs, file, source, root || '/')
+    }
+    // A console app's command runs as its bundle: its permissions, its identity; not the caller's rights.
+    const asBundle = hop?.identity
+    if (asBundle) {
+      bundle.id = asBundle.id
+      bundle.kind = asBundle.kind
+      creds = { ...creds, appId: asBundle.id }
+      loaderEnv = { ...loaderEnv, ...asBundle.env }
+    }
 
     this.checkProcessLimit()
 
@@ -300,10 +322,10 @@ export class ProcessTable {
     const proc: Proc = {
       pid,
       ppid: parent,
-      name: opts.name ?? full.split('/').pop() ?? full,
+      name: opts.name ?? hop?.identity?.name ?? full.split('/').pop() ?? full,
       path: full,
       args,
-      env: { ...(parentProc?.env ?? { PATH: '/bin:/usr/local/bin:/Applications', HOME: '/' }), ...opts.env, ...loaderEnv },
+      env: { ...(parentProc?.env ?? { PATH: this.defaultPath(), HOME: '/' }), ...opts.env, ...loaderEnv },
       cwd,
       host: null as unknown as HostHandle, // set below, once the container exists
       port: port1,
@@ -358,7 +380,7 @@ export class ProcessTable {
     port1.onmessage = (ev) => void this.onMessage(proc, ev.data)
     try {
       proc.host = this.host.start(
-        { type: 'init', pid, ppid: parent, name: proc.name, args: proc.args, env: proc.env, cwd, source, port: port2, tty: proc.stdio.map((e) => e.kind === 'pty') },
+        { type: 'init', pid, ppid: parent, name: proc.name, args: proc.args, env: proc.env, cwd, source, ...(modules ? { modules } : {}), port: port2, tty: proc.stdio.map((e) => e.kind === 'pty') },
         [port2, source.buffer as ArrayBuffer],
         String(this.processUrl),
       )
@@ -381,9 +403,11 @@ export class ProcessTable {
    * Pear program. Anything else is a Pear program (an ES module with a default export) and returns null.
    * The result replaces the program source with the runtime's launcher and says what it is to be started with.
    */
-  private async resolveProgram(path: string, source: Uint8Array, args: string[], opts: SpawnOptions): Promise<{ source: Uint8Array; args: string[]; env: Record<string, string> } | null> {
+  private async resolveProgram(path: string, source: Uint8Array, args: string[], opts: SpawnOptions): Promise<{ source: Uint8Array; args: string[]; env: Record<string, string>; identity?: { id: string; kind: BundleKind; name: string; env: Record<string, string> }; entry?: string; root?: string } | null> {
     const rt = this.system?.runtimes
     if (!rt) return null
+    const cmd = await this.resolveCommandShim(source, args)
+    if (cmd) return cmd
     const launch = async (info: RuntimeInfo, mode: 'command' | 'script', argv: string[]) => {
       const unmet = rt.unmet(info.requires)
       if (unmet.length) throw new SysError('ENOENT', `${info.bundleName} needs ${unmet.map((u) => `${u.kind} ${u.name} ${u.range} (${u.reason})`).join(', ')}`)
@@ -427,6 +451,38 @@ export class ProcessTable {
       }
     }
     return null
+  }
+
+  /**
+   * A console app's command shim (`#!pear-command <bundle> <name>`, or a development link): the command's file runs as
+   * the bundle, with `argv` = [name, ...arguments]. The bundle's own runtime (`node`) runs it if the manifest names one.
+   */
+  private async resolveCommandShim(source: Uint8Array, args: string[]): Promise<{ source: Uint8Array; args: string[]; env: Record<string, string>; identity: { id: string; kind: BundleKind; name: string; env: Record<string, string> }; entry?: string; root?: string } | null> {
+    const head = decoder.decode(source.subarray(0, 600))
+    if (!head.startsWith(COMMAND_MARK)) return null
+    const sys = this.system
+    const shim = parseShim(head)
+    if (!sys || !shim) return null
+    const t = await sys.commands.target(shim)
+    const b = t.bundle
+    const identity = {
+      id: b.id,
+      kind: b.kind,
+      name: t.name,
+      env: { TINY_APP_ID: b.id, TINY_APP_PATH: b.path, TINY_APP_KIND: b.kind, TINY_COMMAND: t.name, ...(t.development ? { TINY_DEVELOPMENT: '1' } : {}) },
+    }
+    const code = await this.fs.readFile(t.entry)
+    if (b.runtime && b.runtime !== 'pear') {
+      const info = sys.runtimes.resolve({ name: b.runtime })
+      if (!info) throw new SysError('ENOENT', `no runtime provides "${b.runtime}"; add one in Settings > Runtimes`)
+      const unmet = sys.runtimes.unmet(info.requires)
+      if (unmet.length) throw new SysError('ENOENT', `${info.bundleName} needs ${unmet.map((u) => `${u.kind} ${u.name} ${u.range} (${u.reason})`).join(', ')}`)
+      const env: Record<string, string> = { PEAR_RUNTIME: info.name, PEAR_RUNTIME_VERSION: info.version, PEAR_RUNTIME_DIR: `${info.path}/`, PEAR_RUNTIME_MODE: 'script' }
+      const fw = sys.runtimes.frameworksFor(info.requires)
+      if (Object.keys(fw).length) env.PEAR_FRAMEWORKS = JSON.stringify(fw)
+      return { source: await this.fs.readFile(info.launcher), args: [t.entry, ...args], env, identity }
+    }
+    return { source: code, args: [t.name, ...args], env: {}, identity, entry: t.entry, root: b.path }
   }
 
   private checkProcessLimit(): void {
@@ -917,6 +973,42 @@ export class ProcessTable {
     }
   }
 
+  /** `PATH` for a process started from nowhere: system programs, then the user's development links, then installed commands. */
+  private defaultPath(): string {
+    const home = this.system?.users.primary.home
+    return ['/bin', ...(home ? [`${home}/.local/bin`] : []), '/usr/local/bin', '/Applications'].join(':')
+  }
+
+  /** Registering commands and taking names are the user's acts: a system process, or one outside any app. */
+  private requireUser(proc: Proc, call: string): void {
+    if (proc.appId) throw new SysError('EPERM', `${call} is not available to apps`)
+  }
+
+  /** Managing services: outside any app, or an app holding `service.manage` (the Terminal), or the service's own bundle. */
+  private requireManager(proc: Proc, call: string): void {
+    if (!proc.appId) return
+    this.system!.perms.require(this.subject(proc), 'service.manage', call)
+  }
+
+  private topicWatchers = new Map<string, Array<{ pid: number; port: number }>>()
+
+  /** `commandSubscribe` / `serviceSubscribe`: messages `{type: 'command'|'service', ...event}` arrive on a port the caller owns. */
+  private subscribe(proc: Proc, topic: 'command' | 'service', port: unknown): null {
+    if (typeof port !== 'number' || !this.ports.ownedBy(proc.pid, port)) throw new SysError('EBADF', 'subscribe needs a port you own')
+    const list = this.topicWatchers.get(topic) ?? []
+    if (list.filter((w) => w.pid === proc.pid).length >= 8) throw new SysError('EMFILE', 'too many subscriptions')
+    list.push({ pid: proc.pid, port })
+    this.topicWatchers.set(topic, list)
+    return null
+  }
+
+  /** Deliver a command or service event to the processes that subscribed. */
+  deliverTopic(topic: 'command' | 'service', event: object): void {
+    const list = this.topicWatchers.get(topic)
+    if (!list) return
+    this.topicWatchers.set(topic, list.filter((w) => this.ports.notify(w.port, event)))
+  }
+
   /** The process a privileged service acts for: `{as: pid}` in the last argument. */
   private actor(proc: Proc, opts: unknown): Proc {
     const as = (opts as { as?: unknown } | undefined)?.as
@@ -991,6 +1083,48 @@ export class ProcessTable {
         return sys.runtimes.frameworks()
       case 'frameworkResolve':
         return sys.runtimes.framework(str(args[0], 'name'), (args[1] as { range?: string } | undefined)?.range)
+      case 'commandList':
+        return sys.commands.list()
+      case 'commandResolve':
+        return sys.commands.resolve(str(args[0], 'command name'))
+      case 'commandLinks':
+        return sys.commands.links()
+      case 'commandConflicts':
+        return sys.commands.conflicts
+      case 'commandSubscribe':
+        return this.subscribe(proc, 'command', args[0])
+      case 'serviceSubscribe':
+        return this.subscribe(proc, 'service', args[0])
+      case 'serviceList':
+        return sys.services.list()
+      case 'commandLink': {
+        // registering commands is the user's act: not for apps (Code asks through Desktop's admin calls)
+        this.requireUser(proc, 'commandLink')
+        const project = this.abs(proc.cwd, str(args[0], 'project'))
+        await sys.perms.checkFs(this.subject(proc), 'readdir', [project])
+        return sys.commands.link(project)
+      }
+      case 'commandUnlink':
+        this.requireUser(proc, 'commandUnlink')
+        return sys.commands.unlink(this.abs(proc.cwd, str(args[0], 'project')))
+      case 'commandTakeOver':
+        this.requireUser(proc, 'commandTakeOver')
+        return sys.commands.takeOver(str(args[0], 'command name'), str(args[1], 'bundle id'))
+      case 'serviceStart': case 'serviceStop': case 'serviceRestart': case 'serviceEnable': case 'serviceDisable': case 'serviceLogs': {
+        const target = str(args[0], 'service id or project')
+        const id = target.startsWith('/') ? null : target
+        // the user (through the shell or Settings) or the bundle that owns the service
+        if (!(proc.bundleId && id === proc.bundleId)) this.requireManager(proc, call)
+        const abs = target.startsWith('/') ? this.abs(proc.cwd, target) : target
+        switch (call) {
+          case 'serviceStart': return sys.services.start(abs)
+          case 'serviceStop': return sys.services.stop(id ?? (await sys.commands.project(abs)).id)
+          case 'serviceRestart': return sys.services.restart(id ?? (await sys.commands.project(abs)).id)
+          case 'serviceEnable': return sys.services.enable(abs)
+          case 'serviceDisable': return sys.services.disable(abs)
+          default: return sys.services.logs(abs, (args[1] ?? {}) as { since?: number; limit?: number })
+        }
+      }
       case 'permCheck':
         return sys.perms.check(this.subject(this.actor(proc, lastOpts(2))), str(args[0], 'capability'), args[1] as string | undefined)
       case 'permRequest':
@@ -1228,6 +1362,8 @@ export class ProcessTable {
       case 'permCheck': case 'permRequest': case 'permList':
       case 'runtimeList': case 'runtimeInfo': case 'runtimeResolve': case 'runtimeEmbed': case 'runtimeUnmet': case 'frameworkList': case 'frameworkResolve':
       case 'bundleList': case 'bundleInfo': case 'cryptoDigest': case 'cryptoVerify': case 'bundlePackage': case 'bundleCheck':
+      case 'commandList': case 'commandResolve': case 'commandSubscribe': case 'commandLink': case 'commandUnlink': case 'commandLinks': case 'commandTakeOver': case 'commandConflicts':
+      case 'serviceList': case 'serviceSubscribe': case 'serviceStart': case 'serviceStop': case 'serviceRestart': case 'serviceEnable': case 'serviceDisable': case 'serviceLogs':
       case 'launchOpen': case 'launchOpenWith': case 'launchApps': case 'launchAppsFor': case 'launchDefaultFor': case 'launchSetDefault':
       case 'launchTypeOf': case 'launchRunning': case 'launchActivate': case 'launchRecents': case 'launchIconFor': case 'launchTypeConflicts':
         return this.systemCall(proc, call, args)

@@ -10,7 +10,10 @@ export default function (tiny: Pear): Promise<number> {
       for (const dir of name.includes('/') ? [''] : dirs) {
         const p = name.includes('/') ? name : `${dir.replace(/\/$/, '')}/${name}`
         if (await tiny.stat(p).then((s) => s.kind === 'file', () => false)) {
-          await tiny.stdout.write(p + '\n')
+          // -v: say who the command belongs to, when an app registered it
+          const owner = flags.v && !name.includes('/') ? await tiny.commandResolve(name).catch(() => null) : null
+          const who = owner ? `\t${owner.bundleName} (${owner.bundleId})${owner.owner.kind === 'link' ? ' [development link]' : ''}${owner.summary ? ` - ${owner.summary}` : ''}` : ''
+          await tiny.stdout.write(p + who + '\n')
           found = true
           if (!flags.a) break
         }

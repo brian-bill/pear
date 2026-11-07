@@ -111,6 +111,7 @@ interface SystemParts {
   bundles: BundleManager
   perms: Permissions
   launch: LaunchServices
+  services: import('./services').ServiceManager
   procs: ProcessTable
   logger?: Logger
 }
@@ -216,14 +217,19 @@ export async function bootSystem(parts: SystemParts, opts: SystemOptions, emit: 
   for (const b of bundles.list()) {
     if (b.kind !== 'service' || !b.autostart) continue
     if (safeMode && !b.system) continue // third-party services wait for a normal boot
-    const info = bundles.find(b.id)!
     if (procs.pidsOf(b.id).length) continue
-    await launch.spawn(info, [])
     const known = SERVICES.find((s) => s.id === b.id)
-    if (!known) continue
-    for (let waited = 0; procs.ports.find(known.port) === undefined && waited <= 5000; waited += 10) await new Promise((r) => setTimeout(r, 10))
-    if (procs.ports.find(known.port) !== undefined) up.push(known.port)
-    else warnings.push(`${known.name} did not register ${known.port}`)
+    if (known) {
+      // a system service must start; the others are supervised and may fail without stopping the boot
+      await parts.services.boot(safeMode, (x) => x.id === b.id)
+      for (let waited = 0; procs.ports.find(known.port) === undefined && waited <= 5000; waited += 10) await new Promise((r) => setTimeout(r, 10))
+      if (procs.ports.find(known.port) !== undefined) up.push(known.port)
+      else warnings.push(`${known.name} did not register ${known.port}`)
+    }
+  }
+  // Everything else that is enabled (the manifest's autostart, or the user's choice), supervised.
+  for (const r of await parts.services.boot(safeMode, (x) => !SERVICES.some((s) => s.id === x.id))) {
+    if (r.error) warnings.push(`${r.bundle.name} did not start: ${r.error.message}`)
   }
 
   progress('ready', 1)

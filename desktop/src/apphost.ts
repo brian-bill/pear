@@ -48,6 +48,8 @@ const ADMIN_KERNEL = new Set([
   'permList', 'permStatus', 'permGrant', 'permRevoke', 'permReset', 'permAudit',
   'bundleList', 'bundleInfo', 'bundleUninstall', 'bundleVerify', 'bundleRescan', 'bundleInstall', 'bundleUpdate', 'bundleInspectArchive', 'bundleInstallArchive', 'bundleInstalledFrom',
   'runtimeList', 'runtimeSetDefault', 'runtimeUnmet', 'runtimeConflicts', 'frameworkList',
+  'commandList', 'commandResolve', 'commandConflicts', 'commandConflictsFor', 'commandTakeOver', 'commandLinks', 'commandUnlink',
+  'serviceList', 'serviceStart', 'serviceStop', 'serviceRestart', 'serviceEnable', 'serviceDisable', 'serviceLogs',
   'configGet', 'configSet', 'configDelete', 'configList', 'configReset', 'configDomains', 'configFlush',
   'listProcesses', 'processInfo', 'kill', 'ping', 'diagSnapshot', 'bootInfo', 'bootMarks', 'fsInfo',
   'logQuery', 'logExport', 'logClear', 'logWrite', 'crashList', 'crashGet', 'crashSubmit', 'crashClear', 'traceStart', 'traceMark', 'traceMeasure', 'traceStop',
@@ -55,6 +57,10 @@ const ADMIN_KERNEL = new Set([
   'launchApps', 'launchRecents', 'launchSetDefault', 'launchDefaultFor', 'launchTypeConflicts', 'launchSetTypeOwner', 'launchRunning',
   'mounts', 'listBookmarks',
 ])
+
+/** Apps that write programs (Code). `dev.kernel` is the narrow slice of console-app calls they need: link a project's commands, run its service. */
+const DEV_APPS = new Set(['org.tiny.code'])
+const DEV_KERNEL = new Set(['commandList', 'commandLink', 'commandUnlink', 'commandLinks', 'serviceList', 'serviceStart', 'serviceStop', 'serviceRestart', 'serviceLogs'])
 
 export interface Deps {
   kernel: Kernel
@@ -151,7 +157,13 @@ export class AppHost {
       else if (e.type === 'launch' && e.event === 'launched') void this.adopt(e.appId, e.pid)
       else if (e.type === 'launch' && e.event === 'activated') void this.activated(e.appId)
       else if (e.type === 'fs') this.fsChanged(e.events)
+      else if (e.type === 'command' || e.type === 'service') this.adminEvent(e.type, e)
     })
+  }
+
+  /** Command and service changes go to the windows of the apps that administer the system (`tiny.on('command' | 'service', ...)`). */
+  private adminEvent(name: 'command' | 'service', data: unknown): void {
+    for (const aw of this.byWin.values()) if (aw.ready && ADMIN_APPS.has(aw.inst.app.id)) aw.post({ t: 'event', name, data })
   }
 
   /** Tell each window the changes under the paths it watches. */
@@ -558,6 +570,12 @@ export class AppHost {
       return v as T
     }
     if (method.startsWith('kernel.')) return inst.call(method.slice(7), await this.readFromBundle(inst.app, method.slice(7), args))
+    if (method === 'dev.kernel') {
+      if (!DEV_APPS.has(inst.app.id) || !inst.app.path.startsWith('/Applications/')) throw Object.assign(new Error(`${inst.app.name} may not link or run projects`), { code: 'EPERM' })
+      const name = String(args[0])
+      if (!DEV_KERNEL.has(name)) throw Object.assign(new Error(`${name} is not available`), { code: 'EPERM' })
+      return (d.kernel as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>)[name]!(...args.slice(1))
+    }
     if (method.startsWith('admin.')) {
       if (!ADMIN_APPS.has(inst.app.id) || !inst.app.path.startsWith('/Applications/')) throw Object.assign(new Error(`${inst.app.name} may not administer the system`), { code: 'EPERM' })
       if (method === 'admin.kernel') {

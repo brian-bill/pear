@@ -23,7 +23,7 @@ const COLUMNS: Column[] = [
   { key: 'files', label: 'Files', width: '56px', num: true, value: (p) => p.openFds },
   { key: 'uptime', label: 'Uptime', width: '84px', num: true, value: (p, s) => (p.exitedAt ?? s.now) - p.startedAt },
   { key: 'responding', label: 'Responding', width: '88px', value: (p) => (p.unresponsive ? 'No' : 'Yes'), cls: (p) => (p.unresponsive ? 'bad' : '') },
-  { key: 'kind', label: 'Kind', width: '72px', value: (p) => p.kind ?? '-' },
+  { key: 'kind', label: 'Kind', width: '72px', value: (p) => (p.kind === 'service' ? 'Service' : p.kind ?? '-') },
 ]
 
 const show = (c: Column, p: ProcessInfo, s: Sample) => (c.key === 'uptime' ? duration(c.value(p, s) as number) : String(c.value(p, s)))

@@ -626,6 +626,11 @@ export class Shell {
         await this.err(`sh: ${name}: command not found (${why})\n`)
         return { done: Promise.resolve(127) }
       }
+      // A linked project that moved: the shim says so in its own words (`example: linked project not found: ...`).
+      if (why.includes(': linked project not found: ')) {
+        await this.err(`${why}\n`)
+        return { done: Promise.resolve(127) }
+      }
       await this.err(`sh: ${name}: ${why}\n`)
       return { done: Promise.resolve(126) }
     }

@@ -11,10 +11,11 @@ const launch = (desktop: Desktop): Promise<void> =>
 /** Create a project with the given name through Code's own UI, picking a template from the menu. */
 async function newProject(desktop: Desktop, name: string, template: string): Promise<void> {
   await ui(desktop).locator('#newproj').click()
-  await sheet(desktop).locator('input').fill(name)
-  await sheet(desktop).getByRole('button', { name: 'OK' }).click()
-  await desktop.page.getByRole('menuitem', { name: template, exact: true }).click()
-  await expect(ui(desktop).locator('#project')).toHaveText(`${name}.app`)
+  await ui(desktop).getByRole('radio', { name: new RegExp(template) }).click()
+  await ui(desktop).locator('.modal').getByRole('button', { name: 'Next' }).click()
+  await ui(desktop).locator('.modal-input').fill(name)
+  await ui(desktop).locator('.modal').getByRole('button', { name: 'Create' }).click()
+  await expect(ui(desktop).locator('#project')).toHaveText(`${name}`)
 }
 
 test('a new project: scaffold, edit, save, and preview', async ({ desktop }) => {
@@ -39,7 +40,7 @@ test('a new project: scaffold, edit, save, and preview', async ({ desktop }) => 
       async () =>
         desktop.page.evaluate(() =>
           window.tiny!.kernel
-            .readFile('/Users/pear/Projects/Demo.app/Resources/ui/main.js')
+            .readFile('/Users/pear/Projects/Demo/Resources/ui/main.js')
             .then((b) => new TextDecoder().decode(b))
             .catch(() => ''),
         ),
@@ -49,7 +50,7 @@ test('a new project: scaffold, edit, save, and preview', async ({ desktop }) => 
 
   // edits on disk show up after a preview reload
   await desktop.page.evaluate(() =>
-    window.tiny!.kernel.writeFile('/Users/pear/Projects/Demo.app/Resources/ui/index.html', new TextEncoder().encode('<!doctype html><html><head><meta charset="utf-8"></head><body><h1>Hello, Test</h1></body></html>')),
+    window.tiny!.kernel.writeFile('/Users/pear/Projects/Demo/Resources/ui/index.html', new TextEncoder().encode('<!doctype html><html><head><meta charset="utf-8"></head><body><h1>Hello, Test</h1></body></html>')),
   )
   await ui(desktop).locator('#prevReload').click()
   await expect(preview(desktop).locator('h1')).toHaveText('Hello, Test')
@@ -58,19 +59,19 @@ test('a new project: scaffold, edit, save, and preview', async ({ desktop }) => 
 test('the project comes back after a reload', async ({ desktop }) => {
   await launch(desktop)
   await newProject(desktop, 'Persist', 'Web App')
-  await expect(ui(desktop).locator('#project')).toHaveText('Persist.app')
+  await expect(ui(desktop).locator('#project')).toHaveText('Persist')
   // give the kernel's 250 ms write-ahead flush a beat before tearing the page down
   await desktop.page.waitForTimeout(700)
   await desktop.reload()
   await launch(desktop)
-  await expect(ui(desktop).locator('#project')).toHaveText('Persist.app')
+  await expect(ui(desktop).locator('#project')).toHaveText('Persist')
   await expect(ui(desktop).locator('#tree .row', { hasText: 'main.js' })).toBeVisible()
 })
 
 test('AssemblyScript builds WebAssembly in the browser, and the preview runs it', async ({ desktop }) => {
   test.setTimeout(240_000)
   await launch(desktop)
-  await newProject(desktop, 'Native', 'Web App + AssemblyScript')
+  await newProject(desktop, 'Native', 'Web App')
 
   // before the first build, the preview runs the JavaScript stand-in
   await ui(desktop).getByRole('button', { name: /Preview/ }).click()
@@ -79,7 +80,7 @@ test('AssemblyScript builds WebAssembly in the browser, and the preview runs it'
   await ui(desktop).getByRole('button', { name: 'Build', exact: true }).click()
   await expect(ui(desktop).locator('#outlog')).toContainText('Built src/main.wasm', { timeout: 180_000 })
   const size = await desktop.page.evaluate(() =>
-    window.tiny!.kernel.stat('/Users/pear/Projects/Native.app/src/main.wasm').then((s) => s.size),
+    window.tiny!.kernel.stat('/Users/pear/Projects/Native/src/main.wasm').then((s) => s.size),
   )
   expect(size).toBeGreaterThan(0)
 
@@ -162,7 +163,7 @@ test('SVG previews beside the editor, HTML has no extra preview, images open in 
   await launch(desktop)
   await newProject(desktop, 'Media', 'Web App')
 
-  const dir = '/Users/pear/Projects/Media.app/Resources'
+  const dir = '/Users/pear/Projects/Media/Resources'
   await putFile(desktop, `${dir}/ok.svg`, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="red"/></svg>')
   await putFile(desktop, `${dir}/bad.svg`, '<svg><rect</svg>')
   await ui(desktop).locator('#refreshTree').click()
@@ -186,7 +187,7 @@ test('SVG previews beside the editor, HTML has no extra preview, images open in 
 
   // a 1×1 PNG opens in the image viewer, not as garbled text
   const png = [137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 31, 21, 196, 137, 0, 0, 0, 13, 73, 68, 65, 84, 120, 156, 99, 248, 255, 255, 63, 0, 5, 254, 2, 254, 167, 53, 129, 132, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130]
-  await putFile(desktop, '/Users/pear/Projects/Media.app/Resources/ui/dot.png', png)
+  await putFile(desktop, '/Users/pear/Projects/Media/Resources/ui/dot.png', png)
   await ui(desktop).locator('#refreshTree').click()
   await ui(desktop).locator('#tree .row', { hasText: 'dot.png' }).click()
   await expect(ui(desktop).locator('#imageView')).toBeVisible()
@@ -230,7 +231,7 @@ test('the preview is persistent: it follows unsaved edits in any file and surviv
   await desktop.page.waitForTimeout(700)
   await desktop.reload()
   await launch(desktop)
-  await expect(ui(desktop).locator('#project')).toHaveText('Live.app')
+  await expect(ui(desktop).locator('#project')).toHaveText('Live')
   await expect(ui(desktop).locator('#previewPane')).toBeVisible()
   await expect(ui(desktop).locator('#prevMode')).toHaveValue('save')
 })
@@ -239,7 +240,7 @@ test('rebuilds keep the app where it was, and the debug console talks to the run
   test.setTimeout(120_000)
   await launch(desktop)
   await newProject(desktop, 'State', 'Web App')
-  const dir = '/Users/pear/Projects/State.app/Resources/ui'
+  const dir = '/Users/pear/Projects/State/Resources/ui'
   await putFile(desktop, `${dir}/index.html`, '<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="style.css"></head><body><input id="note"><p id="out">hello</p><pre id="count"></pre><script src="main.js"></script></body></html>')
   await putFile(desktop, `${dir}/style.css`, '#out { color: rgb(1, 2, 3) }')
   await putFile(desktop, `${dir}/main.js`, "const n = Number(localStorage.getItem('n') || 0) + 1\nlocalStorage.setItem('n', String(n))\ndocument.getElementById('count').textContent = 'loads: ' + n\nconsole.log('boot', { n, list: [1, 2, 3] })\nconsole.warn('careful')\n")
@@ -290,7 +291,7 @@ test('rebuilds keep the app where it was, and the debug console talks to the run
 test('AssemblyScript files get their own IntelliSense: its types, its errors, its completions', async ({ desktop }) => {
   test.setTimeout(120_000)
   await launch(desktop)
-  await newProject(desktop, 'Wasm', 'Web App + AssemblyScript')
+  await newProject(desktop, 'Wasm', 'Web App')
   await ui(desktop).locator('#stProblems').click()
   await ui(desktop).locator('#tree .row', { hasText: /^src$/ }).click()
   await ui(desktop).locator('#tree .row', { hasText: 'main.ts' }).click()
@@ -313,7 +314,7 @@ test('AssemblyScript files get their own IntelliSense: its types, its errors, it
 test('a failed AssemblyScript build says why: the compiler message, a marker on the line, and a stale-wasm warning', async ({ desktop }) => {
   test.setTimeout(240_000)
   await launch(desktop)
-  await newProject(desktop, 'Broken', 'Web App + AssemblyScript')
+  await newProject(desktop, 'Broken', 'Web App')
   await ui(desktop).locator('#tree .row', { hasText: /^src$/ }).click()
   await ui(desktop).locator('#tree .row', { hasText: 'main.ts' }).click()
   // i16 * f64 needs an explicit conversion in AssemblyScript; this is unsaved, and still what gets built
@@ -332,7 +333,7 @@ test('auto save writes edits after a pause, and the setting can be changed and s
   await launch(desktop)
   await newProject(desktop, 'Auto', 'Web App')
   const read = (): Promise<string> =>
-    desktop.page.evaluate(() => window.tiny!.kernel.readFile('/Users/pear/Projects/Auto.app/Resources/ui/main.js').then((b) => new TextDecoder().decode(b)))
+    desktop.page.evaluate(() => window.tiny!.kernel.readFile('/Users/pear/Projects/Auto/Resources/ui/main.js').then((b) => new TextDecoder().decode(b)))
 
   // the default: After Delay. No Cmd+S anywhere.
   await expect(ui(desktop).locator('#stAuto')).toHaveText('Auto Save')
@@ -395,7 +396,7 @@ test('previews: Markdown (with a Mermaid block), Mermaid, a JSON tree and a Merk
   test.setTimeout(180_000)
   await launch(desktop)
   await newProject(desktop, 'Views', 'Web App')
-  const dir = '/Users/pear/Projects/Views.app'
+  const dir = '/Users/pear/Projects/Views'
   await putFile(desktop, `${dir}/NOTES.md`, '# Hello notes\n\nSome *text* and a [link](README.md).\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n```js\nconst x = 1\n```\n\n```mermaid\ngraph TD; A-->B; B-->C\n```\n')
   await putFile(desktop, `${dir}/flow.mmd`, 'graph LR; X-->Y')
   await putFile(desktop, `${dir}/abc.txt`, 'abc')

@@ -4,9 +4,11 @@ import type { ProcessHost } from './hosting'
 import { request, type Message, type SendOptions } from './ipc'
 import type { Termios, WinSize } from './pty'
 import { INIT_PID, ProcessTable, type ExitStatus, type HeartbeatOptions, type KernelEvent, type ProcessInfo, type Signal, type SpawnOptions, type SystemContext } from './process'
-import { BundleManager, OS_VERSION, type BundleInfo, type BundleSource, type Requirement, type VerifyResult } from './bundle'
+import { BundleManager, OS_VERSION, type BundleInfo, type BundleSource, type Manifest, type Requirement, type VerifyResult } from './bundle'
 import { Config, WELL_KNOWN, type ConfigScope, type ConfigValue, type Schema } from './config'
 import { LaunchServices, type AppRecord, type IconInfo, type OpenOptions, type RecentItem, type RunningApp } from './launch'
+import { CommandRegistry, type CommandConflict, type CommandInfo, type LinkInfo } from './commands'
+import { ServiceManager, type LogLine, type ServiceInfo } from './services'
 import { RuntimeRegistry, type FrameworkInfo, type RuntimeInfo, type RuntimeQuery, type Unmet } from './runtimes'
 import { Permissions, type AuditEntry, type Capability, type Grant, type Status } from './perm'
 import { bootSystem, SESSION_MARK, type BootInfo, type SystemOptions } from './system'
@@ -71,17 +73,32 @@ export class Kernel {
     const bundles: BundleManager = new BundleManager(fs, users, types, emit, {
       running: (id) => procs.pidsOf(id),
       quit: (id) => quitApp(procs, id),
-      prepare: (manifest) => runtimes.checkInstall(manifest),
-      changed: () => runtimes.sync(),
+      prepare: async (manifest) => {
+        await runtimes.checkInstall(manifest)
+        await commands.checkInstall(manifest)
+      },
+      changed: async () => {
+        await runtimes.sync()
+        await commands.sync()
+      },
     })
     const runtimes = new RuntimeRegistry(fs, bundles, types)
-    const perms = new Permissions(fs, users, (id) => bundles.find(id), (e) => {
+    const commands = new CommandRegistry(fs, bundles, runtimes, users, (e) => {
+      emit(e)
+      procs.deliverTopic('command', e)
+    })
+    // an installed bundle first; then a project linked for development
+    const perms = new Permissions(fs, users, (id) => bundles.find(id) ?? commands.linkedBundle(id), (e) => {
       emit(e)
       if (e.event === 'changed' && e.status !== 'granted') procs.enforce(e.appId)
     }, { promptTimeout: opts.promptTimeout })
     const launch = new LaunchServices(fs, procs, bundles, types, config, perms, users, emit)
     launch.runtimes = runtimes
-    const sys: SystemContext = { perms, users, config, bundles, launch, runtimes }
+    const services = new ServiceManager(fs, bundles, commands, launch, procs, logger, (e) => {
+      emit(e)
+      procs.deliverTopic('service', e)
+    })
+    const sys: SystemContext = { perms, users, config, bundles, launch, runtimes, commands, services }
     procs.system = sys
     config.onChange((change) => {
       emit({ type: 'config', event: 'changed', change })
@@ -94,7 +111,7 @@ export class Kernel {
     const info: BootInfo = { firstBoot: false, bootTime: Date.now(), version: '', previousShutdown: 'clean', safeMode: false, services: [], warnings: [] }
     const kernel = new Kernel(fs, procs, sys, info, emit, logger)
     if (opts.system) {
-      kernel.boot_ = await bootSystem({ fs, users, config, bundles, perms, launch, procs, logger }, opts.system === true ? {} : opts.system, emit)
+      kernel.boot_ = await bootSystem({ fs, users, config, bundles, perms, launch, procs, logger, services }, opts.system === true ? {} : opts.system, emit)
     }
     return kernel
   }
@@ -367,6 +384,30 @@ export class Kernel {
   frameworkList = async (): Promise<FrameworkInfo[]> => this.sys.runtimes.frameworks()
   frameworkResolve = async (name: string, opts: { range?: string } = {}): Promise<FrameworkInfo | null> => this.sys.runtimes.framework(name, opts.range)
 
+  // ---- console apps: commands on PATH, development links, services (see `commands.ts`, `services.ts`)
+
+  commandList = async (): Promise<CommandInfo[]> => this.sys.commands.list()
+  commandResolve = async (name: string): Promise<CommandInfo | null> => this.sys.commands.resolve(name)
+  /** Commands a bundle wanted but another holder keeps (for the install review and Settings). */
+  commandConflicts = async (): Promise<CommandConflict[]> => [...this.sys.commands.conflicts]
+  /** What an install of this manifest would clash with. */
+  commandConflictsFor = async (manifest: Manifest): Promise<CommandConflict[]> => this.sys.commands.conflictsFor(manifest)
+  /** Register a project's commands for development (shims in `~/.local/bin` that run the files in place). */
+  commandLink = (project: string): Promise<LinkInfo> => this.sys.commands.link(project)
+  commandUnlink = (project: string): Promise<void> => this.sys.commands.unlink(project)
+  commandLinks = (): Promise<LinkInfo[]> => this.sys.commands.links()
+  /** The user lets `bundleId` take `name` from the bundle that holds it. */
+  commandTakeOver = (name: string, bundleId: string): Promise<void> => this.sys.commands.takeOver(name, bundleId)
+
+  serviceList = async (): Promise<ServiceInfo[]> => this.sys.services.list()
+  /** Start an installed service by bundle id, or a project folder (a development service for this session). */
+  serviceStart = (idOrPath: string): Promise<number> => this.sys.services.start(idOrPath)
+  serviceStop = (id: string): Promise<void> => this.sys.services.stop(id)
+  serviceRestart = (id: string): Promise<number> => this.sys.services.restart(id)
+  serviceEnable = (id: string): Promise<void> => this.sys.services.enable(id)
+  serviceDisable = (id: string): Promise<void> => this.sys.services.disable(id)
+  serviceLogs = (id: string, opts?: { since?: number; limit?: number }): Promise<LogLine[]> => this.sys.services.logs(id, opts)
+
   bundleRescan = async (): Promise<Record<string, string>> => {
     await this.sys.bundles.scan()
     return Object.fromEntries(this.sys.bundles.invalid)
@@ -453,6 +494,8 @@ export const KERNEL_METHODS = [
   'diagSnapshot', 'traceStart', 'traceMark', 'traceMeasure', 'traceStop', 'bootMarks',
   'bootInfo', 'configGet', 'configSet', 'configDelete', 'configList', 'configReset', 'configRegister', 'configDomains', 'configExternal', 'configFlush',
   'bundleInstall', 'bundleUpdate', 'bundleUninstall', 'bundlePackage', 'bundleCheck', 'bundleInspectArchive', 'bundleInstallArchive', 'bundleInstalledFrom', 'bundleList', 'bundleInfo', 'bundleVerify', 'bundleRescan',
+  'commandList', 'commandResolve', 'commandConflicts', 'commandConflictsFor', 'commandLink', 'commandUnlink', 'commandLinks', 'commandTakeOver',
+  'serviceList', 'serviceStart', 'serviceStop', 'serviceRestart', 'serviceEnable', 'serviceDisable', 'serviceLogs',
   'runtimeList', 'runtimeInfo', 'runtimeResolve', 'runtimeSetDefault', 'runtimeEmbed', 'runtimeUnmet', 'runtimeConflicts', 'frameworkList', 'frameworkResolve',
   'launchOpen', 'launchOpenWith', 'launchApps', 'launchAppsFor', 'launchDefaultFor', 'launchSetDefault', 'launchTypeOf', 'launchRunning', 'launchActivate', 'launchRecents', 'launchIconFor', 'launchTypeConflicts', 'launchSetTypeOwner',
   'permList', 'permStatus', 'permGrant', 'permRevoke', 'permReset', 'permSetPrompter', 'permRespond', 'permPickerGrant', 'permAudit',

@@ -12,10 +12,11 @@ const key = (d: Desktop, combo: string) => d.page.keyboard.press(combo.replace('
 async function project(d: Desktop, name: string): Promise<void> {
   await d.page.evaluate(() => void window.tiny!.apps.launch('org.tiny.code'))
   await ui(d).locator('#newproj').click()
-  await sheet(d).locator('input').fill(name)
-  await sheet(d).getByRole('button', { name: 'OK' }).click()
-  await d.page.getByRole('menuitem', { name: 'Web App', exact: true }).click()
-  await expect(ui(d).locator('#project')).toHaveText(`${name}.app`)
+  await ui(d).getByRole('radio', { name: new RegExp('Web App') }).click()
+  await ui(d).locator('.modal').getByRole('button', { name: 'Next' }).click()
+  await ui(d).locator('.modal-input').fill(name)
+  await ui(d).locator('.modal').getByRole('button', { name: 'Create' }).click()
+  await expect(ui(d).locator('#project')).toHaveText(`${name}`)
   await ui(d).locator('#tabFiles').click() // focus the Code window: keys go to the focused frame
 }
 

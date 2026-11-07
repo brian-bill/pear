@@ -15,6 +15,7 @@ import { Notifications } from './shell/notifications'
 import { StatusBar } from './shell/statusbar'
 import { DesktopSurface } from './shell/surface'
 import { MenuBar, type Menu } from './shell/menubar'
+import { alertSheet } from './shell/dialogs'
 import { WindowManager, type Win } from './wm/windows'
 
 export const APP = {
@@ -153,11 +154,36 @@ export class Desktop {
     await Promise.all([this.notes.start(), this.status.start(), this.launcher.registerProvider(), this.lock.start()]).catch((e) => console.warn('shell services:', e))
     void this.watchFiles()
     matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => void apply())
+    // Permissions an app declared but the user has not decided: ask once, naming the command when a program is the one asking.
+    await k.permSetPrompter(true).catch(() => {})
     k.onEvent((e) => {
+      if (e.type === 'permission' && e.event === 'prompt') void this.askPermission(e)
       // an app was installed, updated or removed: the Dock, Launchpad and launcher show what is there now
       if (e.type === 'bundle') void this.registry.refresh()
       if (e.type === 'config' && e.event === 'changed' && (e.change.domain === 'tiny.system' || e.change.domain.startsWith('tiny.desktop.'))) void apply()
     })
+  }
+
+  // ---- permission prompts
+
+  private async askPermission(e: { id: number; appName: string; capability: string; pid: number | null }): Promise<void> {
+    const what: Record<string, string> = {
+      network: 'use the network', 'fs.user': 'read and write your files', 'fs.all': 'read and write all files', clipboard: 'use the clipboard', notifications: 'send notifications',
+      'process.spawn': 'start other programs', 'service.manage': 'manage background services', location: 'use your location', loopback: 'reach servers on this computer',
+      'audio.input': 'use the microphone', 'video.input': 'use the camera', 'display.capture': 'capture the screen',
+    }
+    // a command run from a terminal is named by its command, not just its app
+    const info = e.pid === null ? null : await this.kernel.processInfo(e.pid).catch(() => null)
+    const command = info && info.kind === 'tool' ? info.name : null
+    const who = command ? `“${command}” (${e.appName})` : `“${e.appName}”`
+    const choice = await alertSheet(null, {
+      title: `${who} would like to ${what[e.capability] ?? `use ${e.capability}`}`,
+      message: command ? 'This command was started from a terminal or another program. You can change this later in Settings.' : 'You can change this later in Settings.',
+      buttons: ['Allow', 'Don’t Allow'],
+      defaultButton: 0,
+      cancelButton: 1,
+    })
+    await this.kernel.permRespond(e.id, choice === 0 ? 'granted' : 'denied').catch(() => {})
   }
 
   // ---- dock settings

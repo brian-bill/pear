@@ -3,6 +3,7 @@ import { bindStatus, h, type Pane } from './lib'
 import { accessibility } from './panes/accessibility'
 import { appsPane } from './panes/apps'
 import { appearance } from './panes/appearance'
+import { commandsPane } from './panes/commands'
 import { desktop } from './panes/desktop'
 import { displays } from './panes/displays'
 import { general } from './panes/general'
@@ -15,7 +16,7 @@ import { privacy } from './panes/privacy'
 import { runtimesPane } from './panes/runtimes'
 import { sound } from './panes/sound'
 
-const PANES: Pane[] = [general, appearance, desktop, displays, sound, keyboard, language, notifications, privacy, network, appsPane, runtimesPane, accessibility, power]
+const PANES: Pane[] = [general, appearance, desktop, displays, sound, keyboard, language, notifications, privacy, network, appsPane, runtimesPane, commandsPane, accessibility, power]
 
 const listEl = document.getElementById('panes')!
 const paneEl = document.getElementById('pane')!

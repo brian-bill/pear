@@ -36,6 +36,8 @@ export interface OpenOptions {
   args?: string[]
   /** Start without asking the app to come to the front (the `activated` event is not sent). */
   background?: boolean
+  /** The caller watches the process and decides what an early exit means (service supervision): do not throw for it. */
+  supervised?: boolean
 }
 
 export interface RecentItem {
@@ -407,14 +409,14 @@ export class LaunchServices {
           TINY_APP_ID: bundle.id,
           TINY_APP_PATH: bundle.path,
           TINY_APP_KIND: bundle.kind,
-          PATH: '/bin:/usr/local/bin:/Applications',
+          PATH: `/bin:${user.home}/.local/bin:/usr/local/bin:/Applications`,
         },
         bundle: { id: bundle.id, kind: bundle.kind, trusted },
       },
       INIT_PID,
     )
     const ended = await this.procs.whenStarted(pid, LAUNCH_GRACE_MS)
-    if (ended && ended.code !== 0) {
+    if (ended && ended.code !== 0 && !opts.supervised) {
       const why = (ended.error ?? ended.stderr ?? '').trim().split('\n').slice(0, 3).join(' | ')
       throw new SysError('EIO', `${bundle.name} quit while starting (${ended.signal ?? `code ${ended.code}`})${why ? `: ${why}` : ''}`)
     }

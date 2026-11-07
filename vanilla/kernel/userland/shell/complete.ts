@@ -82,6 +82,32 @@ async function files(tiny: Pear, sh: Shell, text: string, dirsOnly = false): Pro
   return out
 }
 
+/**
+ * What a console app's `completion` file says about the word being completed. The file is JSON:
+ * `{ "flags": ["-v", "--verbose"], "args": [{ "kind": "file" | "dir" | "command" | "enum", "values": ["a", "b"] }] }`;
+ * `args` is by position (after the command name, flags not counted) and its last entry repeats.
+ */
+interface CompletionSpec {
+  flags?: string[]
+  args?: Array<{ kind: 'file' | 'dir' | 'command' | 'enum'; values?: string[] }>
+}
+
+async function specFor(tiny: Pear, line: string, wordStart: number): Promise<{ spec: CompletionSpec; position: number } | null> {
+  const before = line.slice(0, wordStart)
+  const words = before.slice(Math.max(before.lastIndexOf('|'), before.lastIndexOf(';'), before.lastIndexOf('&'), before.lastIndexOf('('), before.lastIndexOf('`')) + 1).trim().split(/\s+/).filter(Boolean)
+  while (words.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0]!)) words.shift()
+  const name = words[0]
+  if (!name || name.includes('/')) return null
+  const cmd = await tiny.commandResolve(name).catch(() => null)
+  if (!cmd?.completion) return null
+  try {
+    const spec = JSON.parse(new TextDecoder().decode(await tiny.readFile(cmd.completion))) as CompletionSpec
+    return { spec, position: words.slice(1).filter((x) => !x.startsWith('-')).length }
+  } catch {
+    return null
+  }
+}
+
 export async function complete(tiny: Pear, sh: Shell, line: string, cursor: number): Promise<Completion> {
   const w = wordAt(line, cursor)
   const text = w.text
@@ -93,7 +119,16 @@ export async function complete(tiny: Pear, sh: Shell, line: string, cursor: numb
     return { start: w.start + (w.quote ? 1 : 0), candidates: names.map((n) => `${v[1]!}$${braced ? `{${n}}` : n}`) }
   }
   let found: string[]
-  if (w.command && !text.includes('/') && !text.startsWith('~')) {
+  const described = w.command ? null : await specFor(tiny, line, w.start)
+  if (described && text.startsWith('-')) {
+    found = (described.spec.flags ?? []).filter((f) => f.startsWith(text))
+  } else if (described?.spec.args?.length) {
+    const args = described.spec.args
+    const arg = args[Math.min(described.position, args.length - 1)]!
+    if (arg.kind === 'enum') found = (arg.values ?? []).filter((v) => v.startsWith(text))
+    else if (arg.kind === 'command') found = [...(await programs(tiny, sh, text))]
+    else found = await files(tiny, sh, text, arg.kind === 'dir')
+  } else if (w.command && !text.includes('/') && !text.startsWith('~')) {
     found = [
       ...[...BUILTINS, ...KEYWORDS, ...sh.functions.keys(), ...sh.aliases.keys()].filter((n) => n.startsWith(text)),
       ...(await programs(tiny, sh, text)),

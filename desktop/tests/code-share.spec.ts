@@ -8,10 +8,11 @@ const sheet = (d: Desktop) => win(d).locator('.sheet')
 async function newProject(d: Desktop, name: string): Promise<void> {
   await d.page.evaluate(() => void window.tiny!.apps.launch('org.tiny.code'))
   await ui(d).locator('#newproj').click()
-  await sheet(d).locator('input').fill(name)
-  await sheet(d).getByRole('button', { name: 'OK' }).click()
-  await d.page.getByRole('menuitem', { name: 'Web App', exact: true }).click()
-  await expect(ui(d).locator('#project')).toHaveText(`${name}.app`)
+  await ui(d).getByRole('radio', { name: new RegExp('Web App') }).click()
+  await ui(d).locator('.modal').getByRole('button', { name: 'Next' }).click()
+  await ui(d).locator('.modal-input').fill(name)
+  await ui(d).locator('.modal').getByRole('button', { name: 'Create' }).click()
+  await expect(ui(d).locator('#project')).toHaveText(`${name}`)
 }
 
 const share = async (d: Desktop, item: string) => {
@@ -90,7 +91,7 @@ test('a project that cannot be packaged says why and nothing is written', async 
     const k = window.tiny!.kernel
     const find = async (dir: string): Promise<string | null> => {
       for (const e of await k.readdir(dir).catch(() => [])) {
-        if (e.name === 'Broken.app') return `${dir}/${e.name}`
+        if (e.name === 'Broken') return `${dir}/${e.name}`
         if (e.name === 'Library' || e.name.startsWith('.')) continue
         const hit = await find(`${dir}/${e.name}`).catch(() => null)
         if (hit) return hit

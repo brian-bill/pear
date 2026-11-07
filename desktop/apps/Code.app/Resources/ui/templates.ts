@@ -41,18 +41,6 @@ button { padding: 6px 16px; border-radius: 7px; border: 0.5px solid var(--separa
 button.primary { background: var(--accent, #3a6ea5); color: #fff; border-color: transparent; }
 `
 
-const MAIN = `// $NAME — edited in Code, previewed next to the editor, served like a real app window.
-let n = 0
-const button = document.getElementById('count')
-const message = document.getElementById('msg')
-
-button.addEventListener('click', () => {
-  n++
-  button.textContent = \`Count: \${n}\`
-  if (n === 5) message.textContent = 'At five already. Save the file and watch the preview rebuild.'
-})
-`
-
 const README = `# $NAME
 
 An app project for Pear, edited in **Code**.
@@ -81,7 +69,7 @@ export function fib(n: i32): i32 {
 }
 `
 
-const MAIN_WASM = `// $NAME — edited in Code, previewed next to the editor.
+const MAIN_APP = `// $NAME — edited in Code, previewed next to the editor.
 // If src/main.wasm was built with the AssemblyScript extension, the buttons below run natively.
 let add = (a, b) => a + b
 let fib = (n) => (n < 2 ? n : fib(n - 1) + fib(n - 2))
@@ -108,7 +96,62 @@ button.addEventListener('click', () => {
 })
 `
 
-export function manifestFor(name: string): string {
+const CONSOLE_MAIN = `// $NAME — a console app. Each command runs this file with tiny.args = [command, ...arguments].
+export default async (tiny) => {
+  const [, ...args] = tiny.args
+  const who = args.length ? args.join(' ') : 'world'
+  tiny.stdout.write(\`Hello, \${who}!\\n\`)
+  return 0
+}
+`
+
+const CONSOLE_README = `# $NAME
+
+A console app for Pear, edited in **Code**: a bundle whose program runs in Terminal.
+
+- \`manifest.json\` — identity, permissions and the \`commands\` it declares
+- \`main.js\` — the program (\`export default async (tiny) => exitCode\`), a plain JavaScript ES module
+
+Read arguments from \`tiny.args\`, write to \`tiny.stdout\` / \`tiny.stderr\`, and return the exit code.
+Use **Run in Terminal** in Code to run \`main.js\` by its full path.
+
+## Networking
+
+Add \`"network"\` to \`permissions\`, then use \`net\` (also \`tiny.net\`), the same object windows get:
+
+\`\`\`js
+const res = await net.fetch('https://example.com')
+await tiny.stdout.write(await res.text())
+\`\`\`
+
+\`net.fetch\` resolves to a standard \`Response\`; HTTP error statuses are responses, not exceptions. \`net.status()\`, \`net.download()\` and \`net.upload()\` are there too.
+
+Only \`http(s)\` and \`ws(s)\` URLs work. There is no raw TCP/UDP, and CORS applies (set \`proxy\` on \`fetch\` to use the proxy).
+
+## Running all the time
+
+Change the manifest to \`"kind": "service"\` with \`"autostart": true\`. The service starts at every normal boot (not in safe mode),
+registers a named port with \`tiny.register('com.example.name', port)\`, and answers requests with the \`serve()\` pattern.
+Command-line tools reach it with \`tiny.lookup('com.example.name')\` and \`tiny.request\`.
+`
+
+export function manifestFor(name: string, templateId = 'web'): string {
+  if (templateId === 'console') {
+    const command = kebab(name)
+    return JSON.stringify(
+      {
+        id: `com.pear.${command}`,
+        name,
+        version: '0.1.0',
+        kind: 'tool',
+        entry: 'main.js',
+        permissions: [],
+        commands: [{ name: command, summary: `Run ${name}` }],
+      },
+      null,
+      2,
+    ) + '\n'
+  }
   return JSON.stringify(
     {
       id: `com.pear.${kebab(name)}`,
@@ -127,28 +170,25 @@ export function manifestFor(name: string): string {
 
 export const TEMPLATES: TemplateDef[] = [
   {
-    id: 'web',
-    label: 'Web App',
-    detail: 'HTML, CSS and JavaScript — edit and preview right away.',
+    id: 'console',
+    label: 'Console App',
+    detail: 'A command-line program whose command shows up in the shell.',
     files: {
       'manifest.json': '$MANIFEST',
-      'Resources/icon.svg': '$ICON',
-      'Resources/ui/index.html': INDEX,
-      'Resources/ui/style.css': STYLE,
-      'Resources/ui/main.js': MAIN,
-      'README.md': README,
+      'main.js': CONSOLE_MAIN,
+      'README.md': CONSOLE_README,
     },
   },
   {
-    id: 'wasm',
-    label: 'Web App + AssemblyScript',
-    detail: 'The same, plus src/main.ts compiled to WebAssembly in the browser (Build button).',
+    id: 'web',
+    label: 'Web App',
+    detail: 'HTML, CSS and JavaScript with a live preview. src/main.ts (AssemblyScript) builds to WebAssembly.',
     files: {
       'manifest.json': '$MANIFEST',
       'Resources/icon.svg': '$ICON',
       'Resources/ui/index.html': INDEX,
       'Resources/ui/style.css': STYLE,
-      'Resources/ui/main.js': MAIN_WASM,
+      'Resources/ui/main.js': MAIN_APP,
       'src/main.ts': AS_MAIN,
       'README.md': README + '\n' + README_WASM,
     },
@@ -159,7 +199,7 @@ export function instantiate(template: TemplateDef, name: string): Record<string,
   const out: Record<string, string> = {}
   for (const [path, content] of Object.entries(template.files)) {
     out[path] = content
-      .replaceAll('$MANIFEST', manifestFor(name))
+      .replaceAll('$MANIFEST', manifestFor(name, template.id))
       .replaceAll('$ICON', icon(name))
       .replaceAll('$NAME', name)
   }

@@ -333,6 +333,14 @@ const admin = {
   service: <T = unknown>(name: string, msg: Record<string, unknown>, timeout?: number) => call<T>('admin.service', name, msg, timeout),
 }
 
+/**
+ * For Code: the console-app calls a program-writing app needs, nothing else. `commandLink(project)` registers a
+ * project's commands for development; `serviceStart(project)` runs a service project for the session.
+ */
+const dev = {
+  kernel: <T = unknown>(method: 'commandList' | 'commandLink' | 'commandUnlink' | 'commandLinks' | 'serviceList' | 'serviceStart' | 'serviceStop' | 'serviceRestart' | 'serviceLogs', ...args: unknown[]) => call<T>('dev.kernel', method, ...args),
+}
+
 const system = {
   /** `tiny.system` requests: version, hardware, storage, locale... */
   info: (op: string, args: Record<string, unknown> = {}) => service<any>('tiny.system', { op, ...args }),
@@ -414,6 +422,7 @@ const extras = {
   host,
   shell,
   admin,
+  dev,
   system,
   service,
   on,
@@ -458,6 +467,7 @@ export const tiny = new Proxy({} as Calls, {
   host: typeof host
   shell: typeof shell
   admin: typeof admin
+  dev: typeof dev
   system: typeof system
   net: typeof net
   service: typeof service

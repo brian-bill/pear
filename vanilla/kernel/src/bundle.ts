@@ -65,6 +65,29 @@ interface TypeDefinition {
   ext: string[]
 }
 
+/** One command a bundle declares. `entry` defaults to the bundle entry. */
+export interface CommandDecl {
+  name: string
+  entry?: string
+  summary?: string
+  man?: string
+  completion?: string
+}
+
+export type RestartPolicy = 'never' | 'on-failure' | 'always'
+
+export interface ServiceDecl {
+  /** The IPC port name the service registers (`tiny.register`). */
+  name: string
+  restart: RestartPolicy
+  restartDelayMs: number
+  maxRestarts: number
+}
+
+export const MAX_COMMANDS = 32
+/** A command name: no `/`, may not start with `-` or `.`. */
+export const COMMAND_NAME = /^[A-Za-z0-9_+][A-Za-z0-9._+-]*$/
+
 interface WindowHints {
   title?: string
   width?: number
@@ -103,6 +126,10 @@ export interface Manifest {
   singleInstance: boolean
   /** Services only: start at boot. */
   autostart: boolean
+  /** Names this bundle puts on `PATH` (console apps). */
+  commands: CommandDecl[]
+  /** `kind: "service"` only: how the service registers and is supervised. */
+  service?: ServiceDecl
   /** SHA-256 (hex) of bundle files, by path relative to the bundle. Every listed file must match. */
   hashes?: Record<string, string>
 }
@@ -223,6 +250,44 @@ function parseRequires(raw: unknown): Requirement[] {
   })
 }
 
+function parseCommands(raw: unknown): CommandDecl[] {
+  if (raw === undefined) return []
+  if (!Array.isArray(raw)) bad('commands must be a list')
+  const list = raw as unknown[]
+  if (list.length > MAX_COMMANDS) bad(`a bundle may declare at most ${MAX_COMMANDS} commands`)
+  const seen = new Set<string>()
+  return list.map((c) => {
+    const d = typeof c === 'string' ? { name: c } : c
+    if (!isObject(d)) return bad('commands entries must be a name or an object')
+    const name = d.name
+    if (typeof name !== 'string' || name.length > 64 || !COMMAND_NAME.test(name)) bad(`"${String(name)}" is not a valid command name (letters, digits and . _ + -, not starting with - or .)`)
+    if (seen.has(name as string)) bad(`command "${name as string}" is declared twice`)
+    seen.add(name as string)
+    for (const k of ['summary']) if (d[k] !== undefined && (typeof d[k] !== 'string' || (d[k] as string).length > 200)) bad(`commands[].${k} must be one line of text`)
+    return {
+      name: name as string,
+      ...(d.entry !== undefined ? { entry: relative(d.entry, 'commands[].entry') } : {}),
+      ...(typeof d.summary === 'string' ? { summary: d.summary.split('\n')[0]! } : {}),
+      ...(d.man !== undefined ? { man: relative(d.man, 'commands[].man') } : {}),
+      ...(d.completion !== undefined ? { completion: relative(d.completion, 'commands[].completion') } : {}),
+    }
+  })
+}
+
+function parseService(kind: BundleKind, raw: unknown): ServiceDecl | undefined {
+  if (raw === undefined) return undefined
+  if (kind !== 'service') bad('only a service bundle has a service section')
+  if (!isObject(raw)) return bad('service must be an object')
+  if (typeof raw.name !== 'string' || !raw.name || raw.name.length > 128 || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(raw.name)) bad('service.name must be a port name like com.example.metrics')
+  const restart = (raw.restart ?? 'never') as RestartPolicy
+  if (!['never', 'on-failure', 'always'].includes(restart)) bad('service.restart must be never, on-failure or always')
+  const delay = raw.restartDelayMs ?? 1000
+  if (typeof delay !== 'number' || !Number.isFinite(delay) || delay < 0 || delay > 3_600_000) bad('service.restartDelayMs must be a number of milliseconds up to an hour')
+  const max = raw.maxRestarts ?? 5
+  if (typeof max !== 'number' || !Number.isInteger(max) || max < 0 || max > 1000) bad('service.maxRestarts must be a whole number from 0 to 1000')
+  return { name: raw.name as string, restart, restartDelayMs: delay as number, maxRestarts: max as number }
+}
+
 /** Check `manifest.json` content. Does not look at the files it names. */
 export function parseManifest(text: string): Manifest {
   let raw: Record<string, unknown>
@@ -242,6 +307,8 @@ export function parseManifest(text: string): Manifest {
   const kind = (raw.kind ?? 'app') as BundleKind
   if (!['app', 'service', 'tool', 'runtime', 'framework'].includes(kind)) bad('kind must be app, service, tool, runtime, or framework')
   const provides = parseProvides(kind, raw.provides)
+  if (raw.commands !== undefined && kind !== 'app' && kind !== 'tool' && kind !== 'service') bad('only apps, tools and services can declare commands')
+  const service = parseService(kind, raw.service)
   const entry = relative(kind === 'framework' ? (provides as FrameworkProvides).module : (raw.entry ?? 'main.js'), 'entry')
   if (raw.runtime !== undefined && (typeof raw.runtime !== 'string' || !NAME.test(raw.runtime))) bad('runtime must be a lowercase name like node (or pear)')
   if (raw.runtime !== undefined && raw.runtime !== 'pear' && kind !== 'app' && kind !== 'tool') bad('only apps and tools can name a runtime')
@@ -321,6 +388,8 @@ export function parseManifest(text: string): Manifest {
     urlSchemes: urlSchemes as string[],
     singleInstance: typeof raw.singleInstance === 'boolean' ? raw.singleInstance : kind === 'app' || kind === 'service',
     autostart: raw.autostart === true && kind === 'service',
+    commands: parseCommands(raw.commands),
+    ...(service ? { service } : {}),
     hashes,
   }
 }
@@ -435,6 +504,11 @@ export class BundleManager {
     const entryPath = join(path, manifest.entry)
     const st = await this.fs.stat(entryPath).catch(() => null)
     if (!st || st.kind !== 'file') bad(`entry ${manifest.entry} is missing`)
+    for (const c of manifest.commands) {
+      for (const [what, rel] of [['entry', c.entry], ['man', c.man], ['completion', c.completion]] as const) {
+        if (rel && !(await this.fs.exists(join(path, rel)))) bad(`command ${c.name}: ${what} ${rel} is missing`)
+      }
+    }
     const iconPath = manifest.icon ? join(path, manifest.icon) : null
     if (iconPath && !(await this.fs.exists(iconPath))) bad(`icon ${manifest.icon} is missing`)
     const embed = (manifest.provides as RuntimeProvides | undefined)?.embed
